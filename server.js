@@ -17,6 +17,15 @@ if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
 
+// Ensure FFmpeg binary has execution permissions on Linux/Render
+try {
+  if (ffmpeg.path && fs.existsSync(ffmpeg.path)) {
+    fs.chmodSync(ffmpeg.path, 0o755);
+  }
+} catch (e) {
+  console.warn('FFmpeg chmod notice:', e.message);
+}
+
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -561,7 +570,7 @@ app.post('/api/download', async (req, res) => {
     cleanupFileId(fileId);
     if (!res.headersSent) {
       res.status(500).json({
-        error: 'Ocurrió un error al procesar la descarga. Intenta de nuevo o prueba con otro formato.',
+        error: err.message || 'Ocurrió un error al procesar la descarga. Intenta de nuevo o prueba con otro formato.',
       });
     }
   }
