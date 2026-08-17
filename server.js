@@ -17,6 +17,9 @@ if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
 
+// Cookies path for authenticated downloads
+const COOKIES_PATH = path.join(__dirname, 'cookies.txt');
+
 // Ensure FFmpeg binary has execution permissions on Linux/Render
 try {
   if (ffmpeg.path && fs.existsSync(ffmpeg.path)) {
@@ -242,13 +245,17 @@ app.post('/api/info', async (req, res) => {
 
     // Default: use youtube-dl-exec (yt-dlp)
     try {
-      const info = await youtubedl(targetUrl, {
+      const infoOptions = {
         dumpSingleJson: true,
         noPlaylist: true,
         noWarnings: true,
         noCheckCertificates: true,
         extractorArgs: 'youtube:player_skip=configs;player_client=web_embedded,android',
-      });
+      };
+      if (fs.existsSync(COOKIES_PATH)) {
+        infoOptions.cookies = COOKIES_PATH;
+      }
+      const info = await youtubedl(targetUrl, infoOptions);
 
       const durationSec = Number(info.duration) || 0;
       const formattedDuration = formatDuration(durationSec);
@@ -470,6 +477,10 @@ app.post('/api/download', async (req, res) => {
       output: outputTemplate,
       extractorArgs: 'youtube:player_skip=configs;player_client=web_embedded,android',
     };
+
+    if (fs.existsSync(COOKIES_PATH)) {
+      ytOptions.cookies = COOKIES_PATH;
+    }
 
     let postArgs = [];
     if (startSec !== null && startSec >= 0) {
