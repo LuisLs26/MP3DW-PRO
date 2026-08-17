@@ -482,7 +482,7 @@ app.post('/api/download', async (req, res) => {
         formatSelector = '18/134+140/bestvideo[height<=360]+bestaudio/best[height<=360]/best';
       }
 
-      ytOptions.extractorArgs = 'youtube:player_client=ios,mweb,android,web';
+      ytOptions.extractorArgs = 'youtube:player_client=android,web';
       ytOptions.format = formatSelector;
       ytOptions.mergeOutputFormat = 'mp4';
       ytOptions.windowsFilenames = true;
@@ -491,9 +491,9 @@ app.post('/api/download', async (req, res) => {
         ytOptions.postprocessorArgs = postArgs.join(' ');
       }
     } else {
-      ytOptions.format = '251/bestaudio/best';
+      ytOptions.format = '251/140/bestaudio/best';
       ytOptions.extractAudio = true;
-      ytOptions.extractorArgs = 'youtube:player_client=ios,mweb,android,web';
+      ytOptions.extractorArgs = 'youtube:player_client=android,web';
       ytOptions.concurrentFragments = 4;
       ytOptions.windowsFilenames = true;
 
@@ -534,13 +534,14 @@ app.post('/api/download', async (req, res) => {
     const outputFile = path.join(TEMP_DIR, files[0]);
     const fileExt = path.extname(outputFile) || (isVideo ? '.mp4' : `.${format}`);
     const downloadFilename = `${cleanTitle}${fileExt}`;
+    const asciiFilename = `${cleanTitle.replace(/[^a-zA-Z0-9_\-.]/g, '_')}${fileExt}`;
     const stat = fs.statSync(outputFile);
 
     res.setHeader('Content-Type', mimeTypes[fileExt.toLowerCase()] || 'application/octet-stream');
     res.setHeader('Content-Length', stat.size);
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename*=UTF-8''${encodeURIComponent(downloadFilename)}`
+      `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodeURIComponent(downloadFilename).replace(/'/g, '%27')}`
     );
 
     const stream = fs.createReadStream(outputFile);
