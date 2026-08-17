@@ -511,7 +511,7 @@ app.post('/api/download', async (req, res) => {
         ytOptions.postprocessorArgs = postArgs.join(' ');
       }
     } else {
-      ytOptions.format = '251/140/bestaudio/best';
+      ytOptions.format = 'bestaudio/best';
       ytOptions.extractAudio = true;
       ytOptions.extractorArgs = 'youtube:player_client=web,android';
       ytOptions.concurrentFragments = 4;
