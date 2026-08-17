@@ -250,10 +250,11 @@ app.post('/api/info', async (req, res) => {
         noPlaylist: true,
         noWarnings: true,
         noCheckCertificates: true,
-        extractorArgs: 'youtube:player_client=web,android',
       };
       if (fs.existsSync(COOKIES_PATH)) {
         infoOptions.cookies = COOKIES_PATH;
+      } else {
+        infoOptions.extractorArgs = 'youtube:player_skip=configs;player_client=web_embedded,android';
       }
       const info = await youtubedl(targetUrl, infoOptions);
 
@@ -475,11 +476,12 @@ app.post('/api/download', async (req, res) => {
       noCheckCertificates: true,
       ffmpegLocation: ffmpeg.path,
       output: outputTemplate,
-      extractorArgs: 'youtube:player_client=web,android',
     };
 
     if (fs.existsSync(COOKIES_PATH)) {
       ytOptions.cookies = COOKIES_PATH;
+    } else {
+      ytOptions.extractorArgs = 'youtube:player_skip=configs;player_client=web_embedded,android';
     }
 
     let postArgs = [];
@@ -502,7 +504,6 @@ app.post('/api/download', async (req, res) => {
         formatSelector = '18/134+140/bestvideo[height<=360]+bestaudio/best[height<=360]/best';
       }
 
-      ytOptions.extractorArgs = 'youtube:player_client=web,android';
       ytOptions.format = formatSelector;
       ytOptions.mergeOutputFormat = 'mp4';
       ytOptions.windowsFilenames = true;
@@ -513,7 +514,6 @@ app.post('/api/download', async (req, res) => {
     } else {
       ytOptions.format = 'bestaudio/best';
       ytOptions.extractAudio = true;
-      ytOptions.extractorArgs = 'youtube:player_client=web,android';
       ytOptions.concurrentFragments = 4;
       ytOptions.windowsFilenames = true;
 
