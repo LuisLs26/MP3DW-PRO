@@ -512,7 +512,7 @@ app.post('/api/download', async (req, res) => {
         ytOptions.postprocessorArgs = postArgs.join(' ');
       }
     } else {
-      ytOptions.format = 'bestaudio/best';
+      ytOptions.format = 'ba';
       ytOptions.extractAudio = true;
       ytOptions.concurrentFragments = 4;
       ytOptions.windowsFilenames = true;
