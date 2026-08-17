@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#3b82f6" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Outer Rounded Squircle -->
+  <rect x="4" y="4" width="92" height="92" rx="26" fill="url(#bgGrad)" stroke="#334155" stroke-width="2" />
+  
+  <!-- Stylized Sound Waves & Arrow Symbol -->
+  <!-- Left Wave Bars -->
+  <rect x="22" y="38" width="5.5" height="24" rx="2.75" fill="#64748b" />
+  <rect x="32" y="28" width="5.5" height="44" rx="2.75" fill="url(#accentGrad)" />
+  
+  <!-- Center Arrow -->
+  <path d="M50 24 V60 M50 60 L39 49 M50 60 L61 49" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" />
+  
+  <!-- Right Wave Bars -->
+  <rect x="62.5" y="28" width="5.5" height="44" rx="2.75" fill="url(#accentGrad)" />
+  <rect x="72.5" y="38" width="5.5" height="24" rx="2.75" fill="#64748b" />
+
+  <!-- Base Dock Line -->
+  <path d="M36 74 H64" stroke="#ffffff" stroke-width="5" stroke-linecap="round" />
+</svg>

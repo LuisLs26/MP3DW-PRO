@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MP3DW PRO</title>
+  <meta name="description" content="MP3DW PRO — Descargador y conversor de audio y video de YouTube y TikTok." />
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="style.css?v=5.0" />
+</head>
+<body>
+  <div class="app-wrapper">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand-container">
+        <div class="brand-logo-wrap">
+          <img src="logo.svg" alt="MP3DW PRO Logo" class="brand-logo-img" />
+        </div>
+        <h1 class="brand-title">
+          <span class="gradient-text">MP3DW</span> PRO
+        </h1>
+        <p class="brand-tagline author-tagline">By Nureña Luis</p>
+      </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="main-container">
+      
+      <!-- Search & Input Card -->
+      <section class="card glass-card search-card">
+        <div class="input-container">
+          <div class="input-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+            </svg>
+          </div>
+          
+          <input 
+            type="url" 
+            id="urlInput" 
+            placeholder="Pega el enlace de YouTube o TikTok aquí..." 
+            autocomplete="off"
+            spellcheck="false"
+          />
+
+          <button id="pasteBtn" class="btn-icon" title="Pegar desde portapapeles" type="button">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            <span class="btn-icon-label">Pegar</span>
+          </button>
+
+          <button id="clearBtn" class="btn-icon btn-clear" title="Limpiar" type="button" style="display:none;">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+
+          <button id="searchBtn" class="btn btn-primary" disabled>
+            <span class="btn-text">Buscar</span>
+            <svg class="btn-arrow" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+              <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+          </button>
+        </div>
+      </section>
+
+      <!-- Loading State -->
+      <section id="loadingSection" class="card glass-card state-card" style="display:none;">
+        <div class="loader-spinner"></div>
+        <h3 class="state-title">Analizando enlace...</h3>
+        <p class="state-subtitle">Extrayendo información de audio y video desde el servidor</p>
+      </section>
+
+      <!-- Video Preview & Options Card -->
+      <section id="previewSection" class="card glass-card preview-card" style="display:none;">
+        
+        <!-- Media Meta Header -->
+        <div class="media-header">
+          <div class="thumbnail-wrapper">
+            <img id="previewThumb" src="" alt="Thumbnail" class="media-thumb" />
+            <span id="previewDuration" class="duration-badge">0:00</span>
+            <a id="previewExtLink" href="#" target="_blank" rel="noopener" class="thumb-ext-btn" title="Ver en la plataforma">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                <polyline points="15 3 21 3 21 9"></polyline>
+                <line x1="10" y1="14" x2="21" y2="3"></line>
+              </svg>
+            </a>
+          </div>
+
+          <div class="media-info">
+            <div class="channel-row">
+              <span id="previewPlatformBadge" class="badge badge-platform">YouTube</span>
+              <span id="previewChannel" class="channel-name">Canal</span>
+            </div>
+            <h2 id="previewTitle" class="media-title">Título del video</h2>
+            <div class="media-badges">
+              <span id="previewViews" class="badge badge-subtle">0 vistas</span>
+              <span class="badge badge-quality">Audio HD 320k</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Format Mode Switcher (Audio / Video) -->
+        <div class="format-switcher">
+          <button type="button" class="tab-btn active" data-mode="audio" id="tabAudio">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 18V5l12-2v13"></path>
+              <circle cx="6" cy="18" r="3"></circle>
+              <circle cx="18" cy="16" r="3"></circle>
+            </svg>
+            Audio (MP3 / Lossless)
+          </button>
+          <button type="button" class="tab-btn" data-mode="video" id="tabVideo">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="23 7 16 12 23 17 23 7"></polygon>
+              <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+            </svg>
+            Video (MP4)
+          </button>
+        </div>
+
+        <!-- Audio Options -->
+        <div id="audioOptionsPanel" class="options-panel">
+          <div class="options-row">
+            <div class="option-col">
+              <label class="control-label">Formato de Audio</label>
+              <div class="pill-group" id="audioFormatGroup">
+                <button type="button" class="pill active" data-format="mp3">MP3</button>
+                <button type="button" class="pill" data-format="flac">FLAC</button>
+                <button type="button" class="pill" data-format="wav">WAV</button>
+              </div>
+            </div>
+
+            <div class="option-col" id="bitrateContainer">
+              <label class="control-label">Calidad de Bitrate</label>
+              <div class="pill-group" id="bitrateGroup">
+                <button type="button" class="pill active" data-quality="320">320 kbps <span class="pill-badge">Max</span></button>
+                <button type="button" class="pill" data-quality="256">256 kbps</button>
+                <button type="button" class="pill" data-quality="192">192 kbps</button>
+                <button type="button" class="pill" data-quality="128">128 kbps</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Video Options -->
+        <div id="videoOptionsPanel" class="options-panel" style="display:none;">
+          <div class="options-row">
+            <div class="option-col">
+              <label class="control-label">Resolución de Video</label>
+              <div class="pill-group" id="videoQualityGroup">
+                <button type="button" class="pill active" data-quality="1080">1080p Full HD</button>
+                <button type="button" class="pill" data-quality="720">720p HD</button>
+                <button type="button" class="pill" data-quality="480">480p</button>
+                <button type="button" class="pill" data-quality="360">360p</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Extra Tools: Tag Editor & Audio Trimmer Accordion -->
+        <div class="tools-accordion">
+          
+          <!-- Metadata Editor Toggle -->
+          <div class="tool-toggle-section">
+            <button type="button" class="accordion-header" id="metaToggleBtn">
+              <span class="accordion-title">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 20h9"></path>
+                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                </svg>
+                Personalizar Nombre y Artista
+              </span>
+              <span class="accordion-chevron">▾</span>
+            </button>
+            <div id="metaFields" class="accordion-content" style="display:none;">
+              <div class="custom-fields-grid">
+                <div class="field-item">
+                  <label for="customTitleInput">Título de la canción / video</label>
+                  <input type="text" id="customTitleInput" placeholder="Título para el archivo..." />
+                </div>
+                <div class="field-item">
+                  <label for="customArtistInput">Artista / Canal</label>
+                  <input type="text" id="customArtistInput" placeholder="Nombre del artista..." />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Audio Trimmer Toggle -->
+          <div class="tool-toggle-section">
+            <button type="button" class="accordion-header" id="trimToggleBtn">
+              <span class="accordion-title">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="6" cy="6" r="3"></circle>
+                  <circle cx="6" cy="18" r="3"></circle>
+                  <line x1="20" y1="4" x2="8.12" y2="15.88"></line>
+                  <line x1="14.47" y1="14.48" x2="20" y2="20"></line>
+                  <line x1="8.12" y1="8.12" x2="12" y2="12"></line>
+                </svg>
+                Recortar Audio (Inicio y Fin)
+              </span>
+              <span class="accordion-chevron">▾</span>
+            </button>
+            <div id="trimFields" class="accordion-content" style="display:none;">
+              <p class="trim-helper">Define el fragmento exacto que deseas extraer (ej: <code>00:30</code> a <code>02:15</code>):</p>
+              <div class="trim-inputs-grid">
+                <div class="trim-input-box">
+                  <label for="trimStartInput">Desde (Inicio)</label>
+                  <input type="text" id="trimStartInput" placeholder="00:00" />
+                </div>
+                <div class="trim-input-box">
+                  <label for="trimEndInput">Hasta (Fin)</label>
+                  <input type="text" id="trimEndInput" placeholder="00:00" />
+                </div>
+                <button type="button" id="trimResetBtn" class="btn-text-only">Restablecer</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Download Action Button -->
+        <button id="downloadBtn" class="btn btn-download btn-glow">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span id="downloadBtnText">Descargar MP3 (320 kbps)</span>
+        </button>
+
+      </section>
+
+      <!-- Download & Processing Progress Section -->
+      <section id="progressSection" class="card glass-card state-card" style="display:none;">
+        <div class="progress-header">
+          <div class="pulsing-icon">
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+          </div>
+          <h3 class="state-title" id="progressTitle">Procesando y convirtiendo...</h3>
+          <p class="state-subtitle" id="progressSubtitle">Por favor espera mientras descargamos y codificamos el archivo</p>
+        </div>
+
+        <!-- Step indicators -->
+        <div class="steps-indicator">
+          <div class="step-item active" id="step1">
+            <span class="step-circle">1</span>
+            <span class="step-name">Extracción</span>
+          </div>
+          <div class="step-line" id="stepLine1"></div>
+          <div class="step-item" id="step2">
+            <span class="step-circle">2</span>
+            <span class="step-name">FFmpeg 320k</span>
+          </div>
+          <div class="step-line" id="stepLine2"></div>
+          <div class="step-item" id="step3">
+            <span class="step-circle">3</span>
+            <span class="step-name">Listo</span>
+          </div>
+        </div>
+
+        <!-- Progress Bar Container -->
+        <div class="progress-bar-wrapper">
+          <div class="progress-bar-glow" id="progressBar"></div>
+        </div>
+        <div class="progress-footer">
+          <span id="progressPercent" class="progress-percent">0%</span>
+          <span id="progressStatusDetail" class="progress-detail">Iniciando motor de audio...</span>
+        </div>
+      </section>
+
+      <!-- Success Section -->
+      <section id="successSection" class="card glass-card state-card" style="display:none;">
+        <div class="success-icon-wrap">
+          <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+        </div>
+        <h3 class="state-title">¡Descarga Completada con Éxito!</h3>
+        <p class="state-subtitle" id="successDetails">Tu archivo de alta calidad ha sido guardado en tu carpeta de descargas.</p>
+        
+        <div class="success-actions">
+          <button id="newDownloadBtn" class="btn btn-primary">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            Convertir otro enlace
+          </button>
+        </div>
+      </section>
+
+      <!-- Error Section -->
+      <section id="errorSection" class="card glass-card state-card error-state" style="display:none;">
+        <div class="error-icon-wrap">
+          <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+        </div>
+        <h3 class="state-title">No se pudo completar la descarga</h3>
+        <p class="state-subtitle error-msg" id="errorText">Ocurrió un error inesperado</p>
+        
+        <div class="error-actions">
+          <button id="retryBtn" class="btn btn-secondary">Reintentar</button>
+          <button id="errorResetBtn" class="btn btn-primary">Probar con otro enlace</button>
+        </div>
+      </section>
+
+      <!-- Download History Section -->
+      <section id="historySection" class="card glass-card history-card" style="display:none;">
+        <div class="history-header">
+          <h3 class="history-title">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            Descargas Recientes
+          </h3>
+          <button id="clearHistoryBtn" class="btn-clear-history" type="button">Limpiar historial</button>
+        </div>
+        <div id="historyList" class="history-list"></div>
+      </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer"></footer>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- JavaScript Application -->
+  <script src="app.js?v=4.0"></script>
+</body>
+</html>
