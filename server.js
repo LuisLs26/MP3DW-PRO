@@ -4,7 +4,8 @@ const path = require('path');
 const fs = require('fs');
 const net = require('net');
 const crypto = require('crypto');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
+const stream = require('stream');
 const youtubedl = require('youtube-dl-exec');
 const ffmpeg = require('@ffmpeg-installer/ffmpeg');
 
@@ -372,98 +373,125 @@ app.post('/api/download', async (req, res) => {
     // ─── TIKTOK DEDICATED PIPELINE ─────────────────────────
     if (platform === 'tiktok') {
       const tiktokData = await fetchTikTokMetadata(url);
-      if (tiktokData && tiktokData.playUrl) {
-        const streamUrl = tiktokData.playUrl.startsWith('http')
-          ? tiktokData.playUrl
-          : `https://www.tikwm.com${tiktokData.playUrl}`;
-
-        const tempRawVideo = path.join(TEMP_DIR, `${fileId}_raw.mp4`);
-        const finalFile = path.join(TEMP_DIR, `${fileId}.${isVideo ? 'mp4' : format}`);
-
-        // Download the pristine stream to temp file
-        const streamRes = await fetch(streamUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Referer': 'https://www.tiktok.com/',
-          },
-        });
-
-        if (!streamRes.ok) {
-          throw new Error('No se pudo descargar el flujo de video de TikTok');
-        }
-
-        const buffer = Buffer.from(await streamRes.arrayBuffer());
-        fs.writeFileSync(tempRawVideo, buffer);
-
-        // FFmpeg conversion command
-        let ffmpegArgs = [`-y`, `-i`, `"${tempRawVideo}"`];
-
-        if (startSec !== null && startSec >= 0) {
-          ffmpegArgs.push(`-ss`, `${startSec}`);
-        }
-        if (endSec !== null && endSec > (startSec || 0)) {
-          ffmpegArgs.push(`-to`, `${endSec}`);
-        }
-
-        if (isVideo) {
-          // Video MP4 direct copy or trim
-          ffmpegArgs.push(`-c`, `copy`);
-        } else {
-          // Audio conversion
-          ffmpegArgs.push(`-vn`);
-          const audioFmt = ['mp3', 'flac', 'wav'].includes(format.toLowerCase())
-            ? format.toLowerCase()
-            : 'mp3';
-
-          if (audioFmt === 'mp3') {
-            const bitrate = ['320', '256', '192', '128'].includes(String(quality)) ? `${quality}k` : '320k';
-            ffmpegArgs.push(`-c:a`, `libmp3lame`, `-b:a`, bitrate, `-q:a`, `0`, `-ar`, `48000`);
-          }
-
-          if (clientArtist) {
-            ffmpegArgs.push(`-metadata`, `artist="${clientArtist.replace(/"/g, '')}"`);
-          }
-          if (clientTitle) {
-            ffmpegArgs.push(`-metadata`, `title="${cleanTitle.replace(/"/g, '')}"`);
-          }
-        }
-
-        ffmpegArgs.push(`"${finalFile}"`);
-
-        const ffmpegCmd = `"${ffmpeg.path}" ${ffmpegArgs.join(' ')}`;
-        await new Promise((resolve, reject) => {
-          exec(ffmpegCmd, (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-
-        // Cleanup raw video
-        try { fs.unlinkSync(tempRawVideo); } catch { /* ignore */ }
-
-        // Send generated file
-        const fileExt = isVideo ? '.mp4' : `.${format}`;
-        const downloadFilename = `${cleanTitle}${fileExt}`;
-        const stat = fs.statSync(finalFile);
-
-        res.setHeader('Content-Type', mimeTypes[fileExt.toLowerCase()] || 'application/octet-stream');
-        res.setHeader('Content-Length', stat.size);
-        res.setHeader(
-          'Content-Disposition',
-          `attachment; filename*=UTF-8''${encodeURIComponent(downloadFilename)}`
-        );
-
-        const stream = fs.createReadStream(finalFile);
-        stream.pipe(res);
-
-        stream.on('end', () => cleanupFileId(fileId));
-        stream.on('error', (err) => {
-          console.error('Stream error:', err);
-          cleanupFileId(fileId);
-        });
-
-        return;
+      if (!tiktokData || (!tiktokData.playUrl && !tiktokData.musicUrl)) {
+        throw new Error('No se pudo obtener el video de TikTok. Verifica que el enlace sea público.');
       }
+
+      const isAudio = !isVideo;
+      const audioFmt = ['mp3', 'flac', 'wav'].includes(format.toLowerCase())
+        ? format.toLowerCase()
+        : 'mp3';
+
+      const fileExt = isVideo ? '.mp4' : `.${audioFmt}`;
+      const downloadFilename = `${cleanTitle}${fileExt}`;
+      const hasTrim = (startSec !== null && startSec >= 0) || (endSec !== null && endSec > (startSec || 0));
+
+      // FAST PATH: Direct streaming for instant downloads on mobile and PC
+      if (!hasTrim) {
+        let directMediaUrl = null;
+        if (isVideo && tiktokData.playUrl) {
+          directMediaUrl = tiktokData.playUrl.startsWith('http')
+            ? tiktokData.playUrl
+            : `https://www.tikwm.com${tiktokData.playUrl}`;
+        } else if (isAudio && audioFmt === 'mp3' && tiktokData.musicUrl) {
+          directMediaUrl = tiktokData.musicUrl.startsWith('http')
+            ? tiktokData.musicUrl
+            : `https://www.tikwm.com${tiktokData.musicUrl}`;
+        }
+
+        if (directMediaUrl) {
+          const directRes = await fetch(directMediaUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+              'Referer': 'https://www.tiktok.com/',
+            },
+          });
+
+          if (directRes.ok) {
+            const contentLength = directRes.headers.get('content-length');
+            res.setHeader('Content-Type', mimeTypes[fileExt.toLowerCase()] || 'application/octet-stream');
+            if (contentLength) res.setHeader('Content-Length', contentLength);
+            res.setHeader(
+              'Content-Disposition',
+              `attachment; filename="${downloadFilename.replace(/[^\x20-\x7E]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(downloadFilename)}`
+            );
+
+            const nodeStream = stream.Readable.fromWeb(directRes.body);
+            nodeStream.pipe(res);
+            return;
+          }
+        }
+      }
+
+      // CONVERSION PATH: FFmpeg processing for FLAC/WAV or trimmed clips
+      const sourceUrl = (isAudio && tiktokData.musicUrl)
+        ? (tiktokData.musicUrl.startsWith('http') ? tiktokData.musicUrl : `https://www.tikwm.com${tiktokData.musicUrl}`)
+        : (tiktokData.playUrl.startsWith('http') ? tiktokData.playUrl : `https://www.tikwm.com${tiktokData.playUrl}`);
+
+      const tempRaw = path.join(TEMP_DIR, `${fileId}_raw`);
+      const finalFile = path.join(TEMP_DIR, `${fileId}${fileExt}`);
+
+      const rawRes = await fetch(sourceUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Referer': 'https://www.tiktok.com/',
+        },
+      });
+
+      if (!rawRes.ok) {
+        throw new Error('No se pudo descargar el flujo multimedia de TikTok');
+      }
+
+      const buffer = Buffer.from(await rawRes.arrayBuffer());
+      fs.writeFileSync(tempRaw, buffer);
+
+      let ffmpegArgs = ['-y', '-i', tempRaw];
+      if (startSec !== null && startSec >= 0) ffmpegArgs.push('-ss', `${startSec}`);
+      if (endSec !== null && endSec > (startSec || 0)) ffmpegArgs.push('-to', `${endSec}`);
+
+      if (isVideo) {
+        ffmpegArgs.push('-c', 'copy');
+      } else {
+        ffmpegArgs.push('-vn');
+        if (audioFmt === 'mp3') {
+          const bitrate = ['320', '256', '192', '128'].includes(String(quality)) ? `${quality}k` : '320k';
+          ffmpegArgs.push('-c:a', 'libmp3lame', '-b:a', bitrate, '-q:a', '0', '-ar', '48000');
+        } else if (audioFmt === 'flac') {
+          ffmpegArgs.push('-c:a', 'flac');
+        } else if (audioFmt === 'wav') {
+          ffmpegArgs.push('-c:a', 'pcm_s16le');
+        }
+      }
+
+      ffmpegArgs.push(finalFile);
+
+      await new Promise((resolve, reject) => {
+        const proc = spawn(ffmpeg.path, ffmpegArgs);
+        proc.on('close', (code) => {
+          if (code === 0) resolve();
+          else reject(new Error(`FFmpeg falló con código ${code}`));
+        });
+        proc.on('error', reject);
+      });
+
+      try { fs.unlinkSync(tempRaw); } catch {}
+
+      const stat = fs.statSync(finalFile);
+      res.setHeader('Content-Type', mimeTypes[fileExt.toLowerCase()] || 'application/octet-stream');
+      res.setHeader('Content-Length', stat.size);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${downloadFilename.replace(/[^\x20-\x7E]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(downloadFilename)}`
+      );
+
+      const fileStream = fs.createReadStream(finalFile);
+      fileStream.pipe(res);
+      fileStream.on('end', () => {
+        setTimeout(() => {
+          try { fs.unlinkSync(finalFile); } catch {}
+        }, 2000);
+      });
+      return;
     }
 
     // ─── YOUTUBE & GENERAL PIPELINE (yt-dlp) ───────────────
