@@ -200,6 +200,13 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Helper to extract YouTube video ID
+function extractYouTubeId(url) {
+  if (!url) return null;
+  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|shorts\/|watch\?.+&v=))([\w-]{11})/i);
+  return match ? match[1] : null;
+}
+
 // Video / Audio Info Endpoint
 app.post('/api/info', async (req, res) => {
   const { url } = req.body;
@@ -221,50 +228,81 @@ app.post('/api/info', async (req, res) => {
       }
     }
 
+    const ytId = extractYouTubeId(url);
+    const targetUrl = ytId ? `https://www.youtube.com/watch?v=${ytId}` : url.trim();
+
     // Default: use youtube-dl-exec (yt-dlp)
-    const info = await youtubedl(url.trim(), {
-      dumpSingleJson: true,
-      noPlaylist: true,
-      noWarnings: true,
-      noCheckCertificates: true,
-      extractorArgs: 'youtube:player_client=android,web',
-    });
-
-    const durationSec = Number(info.duration) || 0;
-    const formattedDuration = formatDuration(durationSec);
-
-    let rawTitle = info.title || info.description || (platform === 'tiktok' ? 'Video de TikTok' : 'Video');
-    if (rawTitle.includes('\n')) {
-      rawTitle = rawTitle.split('\n')[0].trim();
-    }
-
-    const channelName =
-      info.channel ||
-      info.uploader ||
-      info.creator ||
-      (info.uploader_id ? `@${info.uploader_id.replace(/^@/, '')}` : (platform === 'tiktok' ? 'TikTok Creator' : 'Artista'));
-
-    // Get best thumbnail
-    let thumbnail = info.thumbnail || '';
-    if (Array.isArray(info.thumbnails) && info.thumbnails.length > 0) {
-      const bestThumb = info.thumbnails.reduce((prev, current) => {
-        return (prev.width || 0) > (current.width || 0) ? prev : current;
+    try {
+      const info = await youtubedl(targetUrl, {
+        dumpSingleJson: true,
+        noPlaylist: true,
+        noWarnings: true,
+        noCheckCertificates: true,
+        extractorArgs: 'youtube:player_client=ios,mweb,android,web',
       });
-      thumbnail = bestThumb.url || thumbnail;
-    }
 
-    res.json({
-      id: info.id || '',
-      title: rawTitle,
-      channel: channelName,
-      thumbnail: thumbnail,
-      duration: durationSec,
-      durationFormatted: formattedDuration,
-      viewCount: info.view_count || info.like_count || null,
-      uploadDate: info.upload_date || null,
-      webpageUrl: info.webpage_url || url,
-      platform: platform || 'general',
-    });
+      const durationSec = Number(info.duration) || 0;
+      const formattedDuration = formatDuration(durationSec);
+
+      let rawTitle = info.title || info.description || 'Video de YouTube';
+      if (rawTitle.includes('\n')) {
+        rawTitle = rawTitle.split('\n')[0].trim();
+      }
+
+      const channelName =
+        info.channel ||
+        info.uploader ||
+        info.creator ||
+        'Artista';
+
+      let thumbnail = info.thumbnail || '';
+      if (Array.isArray(info.thumbnails) && info.thumbnails.length > 0) {
+        const bestThumb = info.thumbnails.reduce((prev, current) => {
+          return (prev.width || 0) > (current.width || 0) ? prev : current;
+        });
+        thumbnail = bestThumb.url || thumbnail;
+      }
+
+      return res.json({
+        id: info.id || ytId || '',
+        title: rawTitle,
+        channel: channelName,
+        thumbnail: thumbnail || (ytId ? `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg` : ''),
+        duration: durationSec,
+        durationFormatted: formattedDuration,
+        viewCount: info.view_count || info.like_count || null,
+        uploadDate: info.upload_date || null,
+        webpageUrl: info.webpage_url || targetUrl,
+        platform: 'youtube',
+      });
+    } catch (ytDlpErr) {
+      console.warn('[Info] yt-dlp fallback oEmbed activado para:', targetUrl, ytDlpErr.message);
+
+      if (ytId) {
+        try {
+          const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent('https://www.youtube.com/watch?v=' + ytId)}&format=json`);
+          if (oembedRes.ok) {
+            const oembed = await oembedRes.json();
+            return res.json({
+              id: ytId,
+              title: oembed.title || 'Video de YouTube',
+              channel: oembed.author_name || 'YouTube Creator',
+              thumbnail: oembed.thumbnail_url || `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`,
+              duration: 0,
+              durationFormatted: 'Completo',
+              viewCount: null,
+              uploadDate: null,
+              webpageUrl: `https://www.youtube.com/watch?v=${ytId}`,
+              platform: 'youtube',
+            });
+          }
+        } catch (oembedErr) {
+          console.error('[Info] oEmbed error:', oembedErr.message);
+        }
+      }
+
+      throw ytDlpErr;
+    }
   } catch (err) {
     console.error('Info error:', err.message || err);
     res.status(500).json({
@@ -412,13 +450,16 @@ app.post('/api/download', async (req, res) => {
     }
 
     // ─── YOUTUBE & GENERAL PIPELINE (yt-dlp) ───────────────
+    const ytId = extractYouTubeId(url);
+    const targetUrl = ytId ? `https://www.youtube.com/watch?v=${ytId}` : url.trim();
+
     const ytOptions = {
       noPlaylist: true,
       noWarnings: true,
       noCheckCertificates: true,
       ffmpegLocation: ffmpeg.path,
       output: outputTemplate,
-      extractorArgs: 'youtube:player_client=android,web',
+      extractorArgs: 'youtube:player_client=ios,mweb,android,web',
     };
 
     let postArgs = [];
@@ -441,7 +482,7 @@ app.post('/api/download', async (req, res) => {
         formatSelector = '18/134+140/bestvideo[height<=360]+bestaudio/best[height<=360]/best';
       }
 
-      ytOptions.extractorArgs = 'youtube:player_client=all';
+      ytOptions.extractorArgs = 'youtube:player_client=ios,mweb,android,web';
       ytOptions.format = formatSelector;
       ytOptions.mergeOutputFormat = 'mp4';
       ytOptions.windowsFilenames = true;
@@ -452,7 +493,7 @@ app.post('/api/download', async (req, res) => {
     } else {
       ytOptions.format = '251/bestaudio/best';
       ytOptions.extractAudio = true;
-      ytOptions.extractorArgs = 'youtube:player_client=all';
+      ytOptions.extractorArgs = 'youtube:player_client=ios,mweb,android,web';
       ytOptions.concurrentFragments = 4;
       ytOptions.windowsFilenames = true;
 
@@ -483,7 +524,7 @@ app.post('/api/download', async (req, res) => {
       ytOptions.addMetadata = true;
     }
 
-    await youtubedl(url.trim(), ytOptions);
+    await youtubedl(targetUrl, ytOptions);
 
     const files = fs.readdirSync(TEMP_DIR).filter((f) => f.startsWith(fileId));
     if (files.length === 0) {
