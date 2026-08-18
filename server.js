@@ -263,8 +263,12 @@ app.post('/api/info', async (req, res) => {
         noPlaylist: true,
         noWarnings: true,
         noCheckCertificates: true,
-        extractorArgs: 'youtube:player_client=tv_embedded,web_embedded,android',
       };
+      if (fs.existsSync(COOKIES_PATH)) {
+        infoOptions.cookies = COOKIES_PATH;
+      } else {
+        infoOptions.extractorArgs = 'youtube:player_client=tv_embedded,web_embedded,android';
+      }
       const info = await youtubedl(targetUrl, infoOptions);
 
       const durationSec = Number(info.duration) || 0;
@@ -512,8 +516,13 @@ app.post('/api/download', async (req, res) => {
       noCheckCertificates: true,
       ffmpegLocation: ffmpeg.path,
       output: outputTemplate,
-      extractorArgs: 'youtube:player_client=tv_embedded,web_embedded,android',
     };
+
+    if (fs.existsSync(COOKIES_PATH)) {
+      ytOptions.cookies = COOKIES_PATH;
+    } else {
+      ytOptions.extractorArgs = 'youtube:player_client=tv_embedded,web_embedded,android';
+    }
 
     let postArgs = [];
     if (startSec !== null && startSec >= 0) {
