@@ -138,7 +138,21 @@
   }
 
   function showError(message) {
-    errorText.textContent = message || 'Ocurrió un error al procesar tu solicitud.';
+    const msg = message || 'Ocurrió un error al procesar tu solicitud.';
+    // Show friendly message for YouTube cloud blocking
+    if (msg.includes('iniciar_local') || msg.includes('servidor en la nube')) {
+      errorText.innerHTML =
+        '<strong>YouTube bloqueó esta descarga desde la nube.</strong><br>' +
+        '<span style="font-size:0.9em;opacity:0.85;">YouTube detecta que el servidor está en un centro de datos y bloquea el acceso. ' +
+        'Para descargar de YouTube, ejecuta <code style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px;">iniciar_local.bat</code> en tu PC.</span>';
+    } else if (msg.includes('Sign in to confirm') || msg.includes('not a bot')) {
+      errorText.innerHTML =
+        '<strong>YouTube requiere verificación.</strong><br>' +
+        '<span style="font-size:0.9em;opacity:0.85;">El servidor fue bloqueado por YouTube. ' +
+        'Usa <code style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px;">iniciar_local.bat</code> en tu PC para descargar de YouTube sin restricciones.</span>';
+    } else {
+      errorText.textContent = msg;
+    }
     showSection(errorSection);
   }
 

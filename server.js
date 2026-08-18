@@ -516,24 +516,23 @@ app.post('/api/prepare', async (req, res) => {
       });
     }
 
-    // ─── YOUTUBE PIPELINE (Real-Time Progress) ───
-    updateJob(fileId, { stage: 1, percent: 15, text: 'Conectando con YouTube y analizando flujos...' });
+    // ─── YOUTUBE PIPELINE (Multi-Strategy Fallback with Real-Time Progress) ───
+    updateJob(fileId, { stage: 1, percent: 15, text: 'Conectando con YouTube...' });
 
     const ytId = extractYouTubeId(url);
     const targetUrl = ytId ? `https://www.youtube.com/watch?v=${ytId}` : url.trim();
     const outputTemplate = path.join(TEMP_DIR, `${fileId}.%(ext)s`);
 
-    const ytOptions = {
+    // Build base options (shared across all strategies)
+    const baseYtOptions = {
       noPlaylist: true,
       noWarnings: true,
       noCheckCertificates: true,
       newline: true,
       ffmpegLocation: ffmpeg.path,
       output: outputTemplate,
+      jsRuntimes: `node:${process.execPath}`,
     };
-
-    ytOptions.extractorArgs = 'youtube:player_client=mweb,android_creator,android,web_embedded';
-    ytOptions.jsRuntimes = `node:${process.execPath}`;
 
     let postArgs = [];
     if (startSec !== null && startSec >= 0) postArgs.push(`-ss ${startSec}`);
@@ -550,78 +549,137 @@ app.post('/api/prepare', async (req, res) => {
       } else {
         formatSelector = '18/134+140/bestvideo[height<=360]+bestaudio/best[height<=360]/best';
       }
-
-      ytOptions.format = formatSelector;
-      ytOptions.mergeOutputFormat = 'mp4';
-      ytOptions.windowsFilenames = true;
-
-      if (postArgs.length > 0) ytOptions.postprocessorArgs = postArgs.join(' ');
+      baseYtOptions.format = formatSelector;
+      baseYtOptions.mergeOutputFormat = 'mp4';
+      baseYtOptions.windowsFilenames = true;
+      if (postArgs.length > 0) baseYtOptions.postprocessorArgs = postArgs.join(' ');
     } else {
-      ytOptions.format = 'bestaudio/best';
-      ytOptions.extractAudio = true;
-      ytOptions.windowsFilenames = true;
-
+      baseYtOptions.format = 'bestaudio/best';
+      baseYtOptions.extractAudio = true;
+      baseYtOptions.windowsFilenames = true;
       const audioFmt = ['mp3', 'flac', 'wav'].includes(format.toLowerCase()) ? format.toLowerCase() : 'mp3';
-      ytOptions.audioFormat = audioFmt;
-
+      baseYtOptions.audioFormat = audioFmt;
       if (audioFmt === 'mp3') {
         const bitrate = ['320', '256', '192', '128'].includes(String(quality)) ? `${quality}K` : '320K';
-        ytOptions.audioQuality = bitrate;
+        baseYtOptions.audioQuality = bitrate;
       } else {
-        ytOptions.audioQuality = '0';
+        baseYtOptions.audioQuality = '0';
       }
-
       if (clientArtist) postArgs.push(`-metadata artist="${clientArtist.replace(/"/g, '')}"`);
       if (clientTitle) postArgs.push(`-metadata title="${cleanTitle.replace(/"/g, '')}"`);
       postArgs.push('-threads 0');
-      if (postArgs.length > 0) ytOptions.postprocessorArgs = postArgs.join(' ');
-      ytOptions.addMetadata = true;
+      if (postArgs.length > 0) baseYtOptions.postprocessorArgs = postArgs.join(' ');
+      baseYtOptions.addMetadata = true;
     }
 
-    // Execute with real-time stdout tracking
-    const ytProc = youtubedl.exec(targetUrl, ytOptions);
-    let ytStderr = '';
+    // ─── Define download strategies (tried in order) ───
+    const strategies = [
+      {
+        name: 'extractorArgs',
+        label: 'Estrategia rápida sin cookies...',
+        options: { ...baseYtOptions, extractorArgs: 'youtube:player_client=mweb,android_creator,android,web_embedded' },
+      },
+    ];
 
-    ytProc.stderr.on('data', (d) => {
-      ytStderr += d.toString();
-    });
-
-    ytProc.stdout.on('data', (chunk) => {
-      const lines = chunk.toString().split('\n');
-      for (const line of lines) {
-        const trimmed = line.trim();
-        const match = trimmed.match(/\[download\]\s+([\d.]+)%\s+of\s+([~\d.]+\w+)\s+at\s+([\d.]+\w+\/s)\s+ETA\s+([\d:]+)/i);
-        if (match) {
-          const dlPercent = parseFloat(match[1]);
-          const size = match[2];
-          const speed = match[3];
-          const eta = match[4];
-          const totalProgress = Math.min(Math.round(dlPercent * 0.75), 75);
-          updateJob(fileId, {
-            stage: 1,
-            percent: totalProgress,
-            text: `Descargando de YouTube: ${match[1]}% (${speed}) • Restan ${eta}`,
-          });
-        } else if (trimmed.includes('[ExtractAudio]') || trimmed.includes('[ffmpeg]') || trimmed.includes('[Merger]')) {
-          updateJob(fileId, {
-            stage: 2,
-            percent: 85,
-            text: isVideo ? 'Uniendo pistas de audio y video en HD...' : 'Codificando en 320 kbps con FFmpeg...',
-          });
-        }
-      }
-    });
-
-    await new Promise((resolve, reject) => {
-      ytProc.on('close', (code) => {
-        if (code === 0) resolve();
-        else {
-          console.error('[yt-dlp stderr]:', ytStderr);
-          reject(new Error(ytStderr || `Error al procesar YouTube (código ${code})`));
-        }
+    // Add cookies strategy if cookies file exists
+    const cookiePaths = [
+      path.join(__dirname, 'www.youtube.com_cookies.txt'),
+      path.join(__dirname, 'cookies.txt'),
+    ];
+    const validCookiePath = cookiePaths.find((p) => fs.existsSync(p));
+    if (validCookiePath) {
+      strategies.push({
+        name: 'cookies',
+        label: 'Reintentando con cookies de sesión...',
+        options: { ...baseYtOptions, cookies: validCookiePath, extractorArgs: 'youtube:player_client=mweb,android_creator' },
       });
-      ytProc.on('error', reject);
-    });
+    }
+
+    // ─── Execute strategies with fallback ───
+    let lastError = null;
+    for (let i = 0; i < strategies.length; i++) {
+      const strategy = strategies[i];
+      console.log(`[YouTube] Trying strategy ${i + 1}/${strategies.length}: ${strategy.name}`);
+      updateJob(fileId, { stage: 1, percent: 15, text: strategy.label });
+
+      // Clean up any partial files from previous attempts
+      if (i > 0) {
+        try {
+          fs.readdirSync(TEMP_DIR).filter((f) => f.startsWith(fileId)).forEach((f) => {
+            try { fs.unlinkSync(path.join(TEMP_DIR, f)); } catch {}
+          });
+        } catch {}
+      }
+
+      try {
+        await new Promise((resolve, reject) => {
+          const ytProc = youtubedl.exec(targetUrl, strategy.options);
+          let ytStderr = '';
+
+          ytProc.stderr.on('data', (d) => {
+            ytStderr += d.toString();
+          });
+
+          ytProc.stdout.on('data', (chunk) => {
+            const lines = chunk.toString().split('\n');
+            for (const line of lines) {
+              const trimmed = line.trim();
+              const match = trimmed.match(/\[download\]\s+([\d.]+)%\s+of\s+([~\d.]+\w+)\s+at\s+([\d.]+\w+\/s)\s+ETA\s+([\d:]+)/i);
+              if (match) {
+                const dlPercent = parseFloat(match[1]);
+                const speed = match[3];
+                const eta = match[4];
+                const totalProgress = Math.min(Math.round(dlPercent * 0.75), 75);
+                updateJob(fileId, {
+                  stage: 1,
+                  percent: totalProgress,
+                  text: `Descargando de YouTube: ${match[1]}% (${speed}) • Restan ${eta}`,
+                });
+              } else if (trimmed.includes('[ExtractAudio]') || trimmed.includes('[ffmpeg]') || trimmed.includes('[Merger]')) {
+                updateJob(fileId, {
+                  stage: 2,
+                  percent: 85,
+                  text: isVideo ? 'Uniendo pistas de audio y video en HD...' : 'Codificando en 320 kbps con FFmpeg...',
+                });
+              }
+            }
+          });
+
+          ytProc.on('close', (code) => {
+            if (code === 0) resolve();
+            else {
+              console.error(`[yt-dlp strategy=${strategy.name} stderr]:`, ytStderr);
+              reject(new Error(ytStderr || `Error al procesar YouTube (código ${code})`));
+            }
+          });
+          ytProc.on('error', reject);
+        });
+
+        // Strategy succeeded — find output file
+        lastError = null;
+        break;
+      } catch (err) {
+        lastError = err;
+        const isBotBlock = (err.message || '').includes('Sign in to confirm');
+        const isCookieInvalid = (err.message || '').includes('cookies are no longer valid');
+        console.log(`[YouTube] Strategy ${strategy.name} failed: ${isBotBlock ? 'BOT_BLOCK' : isCookieInvalid ? 'COOKIE_EXPIRED' : 'OTHER'}`);
+
+        // If it's not a bot/cookie issue, don't try other strategies
+        if (!isBotBlock && !isCookieInvalid) break;
+      }
+    }
+
+    if (lastError) {
+      const isBotBlock = (lastError.message || '').includes('Sign in to confirm');
+      if (isBotBlock) {
+        throw new Error(
+          'YouTube bloqueó la descarga desde el servidor en la nube. ' +
+          'Esto ocurre porque YouTube detecta IPs de centros de datos. ' +
+          'Para descargar de YouTube, usa la versión local ejecutando iniciar_local.bat en tu PC.'
+        );
+      }
+      throw lastError;
+    }
 
     const files = fs.readdirSync(TEMP_DIR).filter((f) => f.startsWith(fileId));
     if (files.length === 0) {
