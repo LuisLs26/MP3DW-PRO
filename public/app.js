@@ -267,12 +267,17 @@
     progressPercent.textContent = '0%';
   }
 
-  // ─── Download Process (Direct Native Browser Download) ───
-  function startDownload() {
+  // ─── Download Process (Prepare + Instant Native Download) ───
+  async function startDownload() {
     if (!state.currentUrl || state.isDownloading) return;
 
     state.isDownloading = true;
     downloadBtn.disabled = true;
+    resetSteps();
+    showSection(progressSection);
+
+    progressTitle.textContent = state.mode === 'video' ? 'Procesando Video MP4...' : 'Convirtiendo Audio en Alta Calidad...';
+    updateProgressStage(1, 15, 'Conectando con el motor de descarga...');
 
     const payload = {
       url: state.currentUrl,
@@ -288,75 +293,83 @@
     const safeTitle = (payload.title || 'audio').replace(/[/\\?%*:|"<>]/g, '_').replace(/\s+/g, ' ').trim() || 'descarga';
     const cleanSafeName = `${safeTitle}.${fileExt}`;
 
-    // Show initial progress state
-    resetSteps();
-    showSection(progressSection);
-    progressTitle.textContent = state.mode === 'video' ? 'Iniciando descarga de Video MP4...' : 'Iniciando descarga de Audio MP3...';
-    updateProgressStage(1, 40, 'Conectando con el servidor y enviando al gestor de descargas...');
-
-    // Trigger direct native browser download via form submission
-    const downloadForm = document.createElement('form');
-    downloadForm.method = 'POST';
-    downloadForm.action = '/api/download';
-    downloadForm.style.display = 'none';
-
-    Object.entries(payload).forEach(([key, val]) => {
-      if (val !== null && val !== undefined && val !== '') {
-        const hiddenInput = document.createElement('input');
-        hiddenInput.type = 'hidden';
-        hiddenInput.name = key;
-        hiddenInput.value = val;
-        downloadForm.appendChild(hiddenInput);
+    let currentPercent = 15;
+    const progressTimer = setInterval(() => {
+      if (currentPercent < 90) {
+        currentPercent += Math.random() * 4 + 1.5;
+        if (currentPercent < 50) {
+          updateProgressStage(1, currentPercent, 'Descargando flujo multimedia...');
+        } else if (currentPercent < 80) {
+          updateProgressStage(2, currentPercent, state.mode === 'video' ? 'Codificando video MP4...' : `Procesando FFmpeg 320k (${fileExt.toUpperCase()})...`);
+        } else {
+          updateProgressStage(2, currentPercent, 'Incrustando etiquetas y empaquetando archivo...');
+        }
       }
-    });
+    }, 300);
 
-    document.body.appendChild(downloadForm);
-    downloadForm.submit();
+    try {
+      const res = await fetch('/api/prepare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
 
-    setTimeout(() => {
-      if (downloadForm.parentNode) {
-        document.body.removeChild(downloadForm);
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Error al procesar la descarga.');
       }
-    }, 3000);
 
-    // Save to History
-    addToHistory({
-      url: state.currentUrl,
-      title: payload.title,
-      channel: payload.artist,
-      format: fileExt.toUpperCase(),
-      quality: state.mode === 'video' ? (state.platform === 'tiktok' ? 'HD' : `${state.videoQuality}p`) : `${state.bitrate}k`,
-      thumbnail: state.thumbnail,
-      platform: state.platform || 'general',
-      timestamp: Date.now(),
-    });
+      clearInterval(progressTimer);
+      updateProgressStage(3, 100, '¡Archivo listo! Iniciando descarga en tu navegador...');
 
-    // Update Progress and show success transition
-    setTimeout(() => {
-      updateProgressStage(2, 80, 'El servidor está enviando el flujo directo a tu carpeta de descargas...');
-    }, 1200);
+      // Trigger instant native browser download
+      const downloadLink = document.createElement('a');
+      downloadLink.href = data.downloadUrl;
+      downloadLink.setAttribute('download', cleanSafeName);
+      downloadLink.download = cleanSafeName;
+      downloadLink.style.display = 'none';
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
 
-    setTimeout(() => {
-      updateProgressStage(3, 100, '¡Descarga iniciada en tu navegador!');
-      
-      // Update fallback manual link (using GET query string)
-      const params = new URLSearchParams();
-      Object.entries(payload).forEach(([k, v]) => { if (v) params.append(k, v); });
+      setTimeout(() => {
+        if (downloadLink.parentNode) document.body.removeChild(downloadLink);
+      }, 3000);
+
+      // Setup direct fallback download button on success card
       const directDownloadLink = document.getElementById('directDownloadLink');
       if (directDownloadLink) {
-        directDownloadLink.href = `/api/download?${params.toString()}`;
+        directDownloadLink.href = data.downloadUrl;
         directDownloadLink.setAttribute('download', cleanSafeName);
         directDownloadLink.download = cleanSafeName;
         directDownloadLink.style.display = 'inline-flex';
       }
 
-      successDetails.textContent = `"${payload.title}" (${fileExt.toUpperCase()}) se está descargando en el gestor de descargas de tu navegador.`;
-      showSection(successSection);
-      showToast('Descarga iniciada en tu navegador', '🚀');
+      // Save to History
+      addToHistory({
+        url: state.currentUrl,
+        title: payload.title,
+        channel: payload.artist,
+        format: fileExt.toUpperCase(),
+        quality: state.mode === 'video' ? (state.platform === 'tiktok' ? 'HD' : `${state.videoQuality}p`) : `${state.bitrate}k`,
+        thumbnail: state.thumbnail,
+        platform: state.platform || 'general',
+        timestamp: Date.now(),
+      });
 
+      // Show Success Section
+      setTimeout(() => {
+        successDetails.textContent = `"${payload.title}" (${fileExt.toUpperCase()}) se ha guardado en tu carpeta de descargas.`;
+        showSection(successSection);
+        showToast('Descarga completada', '🎉');
+      }, 600);
+
+    } catch (err) {
+      clearInterval(progressTimer);
+      showError(err.message || 'Ocurrió un error durante la conversión.');
+    } finally {
       state.isDownloading = false;
       downloadBtn.disabled = false;
-    }, 2500);
+    }
   }
 
   // ─── Reset State ─────────────────────────────────────────
