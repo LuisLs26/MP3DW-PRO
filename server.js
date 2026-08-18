@@ -532,14 +532,8 @@ app.post('/api/prepare', async (req, res) => {
       output: outputTemplate,
     };
 
-    if (fs.existsSync(COOKIES_PATH)) {
-      ytOptions.cookies = COOKIES_PATH;
-      ytOptions.jsRuntimes = `node:${process.execPath}`;
-    } else {
-      ytOptions.extractorArgs = isVideo
-        ? 'youtube:player_client=tv_embedded,web_embedded,android_creator'
-        : 'youtube:player_client=android_music,android_creator,tv_embedded';
-    }
+    ytOptions.extractorArgs = 'youtube:player_client=ios,android,web_embedded';
+    ytOptions.jsRuntimes = `node:${process.execPath}`;
 
     let postArgs = [];
     if (startSec !== null && startSec >= 0) postArgs.push(`-ss ${startSec}`);
