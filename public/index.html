@@ -299,7 +299,15 @@
         <h3 class="state-title">¡Descarga Completada con Éxito!</h3>
         <p class="state-subtitle" id="successDetails">Tu archivo de alta calidad ha sido guardado en tu carpeta de descargas.</p>
         
-        <div class="success-actions">
+        <div class="success-actions" style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top:20px;">
+          <a id="directDownloadLink" class="btn btn-secondary" style="display:none; text-decoration:none;" download>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Guardar archivo manualmente
+          </a>
           <button id="newDownloadBtn" class="btn btn-primary">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="12" y1="5" x2="12" y2="19"></line>

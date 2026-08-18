@@ -19,7 +19,10 @@ if (!fs.existsSync(TEMP_DIR)) {
 }
 
 // Cookies path for authenticated downloads
-const COOKIES_PATH = path.join(__dirname, 'cookies.txt');
+let COOKIES_PATH = path.join(__dirname, 'cookies.txt');
+if (!fs.existsSync(COOKIES_PATH) && fs.existsSync(path.join(__dirname, 'www.youtube.com_cookies.txt'))) {
+  COOKIES_PATH = path.join(__dirname, 'www.youtube.com_cookies.txt');
+}
 
 // Ensure Node binary directory is in PATH for yt-dlp JavaScript challenge solver
 try {

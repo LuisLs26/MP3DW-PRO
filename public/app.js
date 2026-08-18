@@ -330,16 +330,40 @@
       // Trigger File Download
       const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
+      const fileExt = state.mode === 'video' ? 'mp4' : state.audioFormat;
+      const safeTitle = (payload.title || 'audio').replace(/[/\\?%*:|"<>]/g, '_').replace(/\s+/g, ' ').trim() || 'descarga';
+      const cleanSafeName = `${safeTitle}.${fileExt}`;
 
       const downloadAnchor = document.createElement('a');
       downloadAnchor.href = blobUrl;
-      const fileExt = state.mode === 'video' ? 'mp4' : state.audioFormat;
-      downloadAnchor.download = `${payload.title}.${fileExt}`;
+      downloadAnchor.setAttribute('download', cleanSafeName);
+      downloadAnchor.download = cleanSafeName;
+      downloadAnchor.style.display = 'none';
       document.body.appendChild(downloadAnchor);
-      downloadAnchor.click();
-      document.body.removeChild(downloadAnchor);
 
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+      try {
+        downloadAnchor.click();
+      } catch (e) {
+        console.warn('Auto download click notice:', e);
+      }
+
+      setTimeout(() => {
+        if (downloadAnchor.parentNode) {
+          document.body.removeChild(downloadAnchor);
+        }
+      }, 2000);
+
+      // Setup direct fallback download button on success card
+      const directDownloadLink = document.getElementById('directDownloadLink');
+      if (directDownloadLink) {
+        directDownloadLink.href = blobUrl;
+        directDownloadLink.setAttribute('download', cleanSafeName);
+        directDownloadLink.download = cleanSafeName;
+        directDownloadLink.style.display = 'inline-flex';
+      }
+
+      // Keep blob URL active for 5 minutes
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 300000);
 
       // Save to History
       addToHistory({
@@ -355,10 +379,10 @@
 
       // Show Success Section
       setTimeout(() => {
-        successDetails.textContent = `"${payload.title}" (${fileExt.toUpperCase()}) se ha descargado correctamente.`;
+        successDetails.textContent = `"${payload.title}" (${fileExt.toUpperCase()}) se ha preparado correctamente. Si la descarga no inició automáticamente, usa el botón de abajo.`;
         showSection(successSection);
-        showToast('Descarga completada', '🎉');
-      }, 700);
+        showToast('Descarga lista', '🎉');
+      }, 500);
 
     } catch (err) {
       clearInterval(progressTimer);
