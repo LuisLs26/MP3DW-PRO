@@ -45,6 +45,7 @@ try {
 
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Port Discovery ─────────────────────────────────────────
@@ -345,8 +346,9 @@ app.post('/api/info', async (req, res) => {
   }
 });
 
-// Download Audio / Video Endpoint
-app.post('/api/download', async (req, res) => {
+// Download Audio / Video Endpoint (Supports both POST and GET)
+app.all('/api/download', async (req, res) => {
+  const data = req.method === 'GET' ? req.query : (req.body || {});
   const {
     url,
     title: clientTitle,
@@ -355,7 +357,7 @@ app.post('/api/download', async (req, res) => {
     quality = '320',
     trimStart,
     trimEnd,
-  } = req.body;
+  } = data;
 
   if (!url || !isValidSupportedUrl(url)) {
     return res.status(400).json({ error: 'URL no válida o no soportada.' });
