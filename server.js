@@ -514,6 +514,7 @@ app.post('/api/prepare', async (req, res) => {
 
       if (clientArtist) postArgs.push(`-metadata artist="${clientArtist.replace(/"/g, '')}"`);
       if (clientTitle) postArgs.push(`-metadata title="${cleanTitle.replace(/"/g, '')}"`);
+      postArgs.push('-threads 0');
       if (postArgs.length > 0) ytOptions.postprocessorArgs = postArgs.join(' ');
       ytOptions.addMetadata = true;
     }
