@@ -138,21 +138,7 @@
   }
 
   function showError(message) {
-    const msg = message || 'Ocurrió un error al procesar tu solicitud.';
-    // Show friendly message for YouTube cloud blocking
-    if (msg.includes('iniciar_local') || msg.includes('servidor en la nube')) {
-      errorText.innerHTML =
-        '<strong>YouTube bloqueó esta descarga desde la nube.</strong><br>' +
-        '<span style="font-size:0.9em;opacity:0.85;">YouTube detecta que el servidor está en un centro de datos y bloquea el acceso. ' +
-        'Para descargar de YouTube, ejecuta <code style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px;">iniciar_local.bat</code> en tu PC.</span>';
-    } else if (msg.includes('Sign in to confirm') || msg.includes('not a bot')) {
-      errorText.innerHTML =
-        '<strong>YouTube requiere verificación.</strong><br>' +
-        '<span style="font-size:0.9em;opacity:0.85;">El servidor fue bloqueado por YouTube. ' +
-        'Usa <code style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px;">iniciar_local.bat</code> en tu PC para descargar de YouTube sin restricciones.</span>';
-    } else {
-      errorText.textContent = msg;
-    }
+    errorText.textContent = message || 'Ocurrió un error al procesar tu solicitud.';
     showSection(errorSection);
   }
 
@@ -281,7 +267,7 @@
     progressPercent.textContent = '0%';
   }
 
-  // ─── Download Process (Real-Time SSE Progress + Instant Download) ───
+  // ─── Download Process (Prepare + Instant Native Download) ───
   async function startDownload() {
     if (!state.currentUrl || state.isDownloading) return;
 
@@ -291,9 +277,8 @@
     showSection(progressSection);
 
     progressTitle.textContent = state.mode === 'video' ? 'Procesando Video MP4...' : 'Convirtiendo Audio en Alta Calidad...';
-    updateProgressStage(1, 10, 'Conectando con el servidor...');
+    updateProgressStage(1, 15, 'Conectando con el motor de descarga...');
 
-    const jobId = 'job_' + Math.random().toString(36).substring(2, 10);
     const payload = {
       url: state.currentUrl,
       title: customTitleInput.value.trim() || state.rawTitle,
@@ -302,28 +287,25 @@
       quality: state.mode === 'video' ? state.videoQuality : state.bitrate,
       trimStart: trimStartInput.value.trim() || '',
       trimEnd: trimEndInput.value.trim() || '',
-      jobId,
     };
 
     const fileExt = payload.format;
     const safeTitle = (payload.title || 'audio').replace(/[/\\?%*:|"<>]/g, '_').replace(/\s+/g, ' ').trim() || 'descarga';
     const cleanSafeName = `${safeTitle}.${fileExt}`;
 
-    // Setup Real-Time Server-Sent Events (SSE) Progress Listener
-    let eventSource = null;
-    try {
-      eventSource = new EventSource(`/api/progress/${jobId}`);
-      eventSource.onmessage = (e) => {
-        try {
-          const progressData = JSON.parse(e.data);
-          if (progressData.stage && progressData.percent !== undefined) {
-            updateProgressStage(progressData.stage, progressData.percent, progressData.text);
-          }
-        } catch {}
-      };
-    } catch (e) {
-      console.warn('SSE setup warning:', e);
-    }
+    let currentPercent = 15;
+    const progressTimer = setInterval(() => {
+      if (currentPercent < 90) {
+        currentPercent += Math.random() * 4 + 1.5;
+        if (currentPercent < 50) {
+          updateProgressStage(1, currentPercent, 'Descargando flujo multimedia...');
+        } else if (currentPercent < 80) {
+          updateProgressStage(2, currentPercent, state.mode === 'video' ? 'Codificando video MP4...' : `Procesando FFmpeg 320k (${fileExt.toUpperCase()})...`);
+        } else {
+          updateProgressStage(2, currentPercent, 'Incrustando etiquetas y empaquetando archivo...');
+        }
+      }
+    }, 300);
 
     try {
       const res = await fetch('/api/prepare', {
@@ -333,15 +315,12 @@
       });
 
       const data = await res.json();
-      if (eventSource) {
-        eventSource.close();
-      }
-
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Error al procesar la descarga.');
       }
 
-      updateProgressStage(3, 100, '¡Archivo listo! Guardando en tu navegador...');
+      clearInterval(progressTimer);
+      updateProgressStage(3, 100, '¡Archivo listo! Iniciando descarga en tu navegador...');
 
       // Trigger instant native browser download
       const downloadLink = document.createElement('a');
@@ -379,13 +358,13 @@
 
       // Show Success Section
       setTimeout(() => {
-        successDetails.textContent = `"${payload.title}" (${fileExt.toUpperCase()}) se ha descargado correctamente.`;
+        successDetails.textContent = `"${payload.title}" (${fileExt.toUpperCase()}) se ha guardado en tu carpeta de descargas.`;
         showSection(successSection);
         showToast('Descarga completada', '🎉');
-      }, 700);
+      }, 600);
 
     } catch (err) {
-      if (eventSource) eventSource.close();
+      clearInterval(progressTimer);
       showError(err.message || 'Ocurrió un error durante la conversión.');
     } finally {
       state.isDownloading = false;

@@ -260,37 +260,7 @@ app.post('/api/info', async (req, res) => {
     const ytId = extractYouTubeId(url);
     const targetUrl = ytId ? `https://www.youtube.com/watch?v=${ytId}` : url.trim();
 
-    // Fast Path: YouTube oEmbed for instant title & thumbnail loading (<0.5s)
-    if (ytId) {
-      try {
-        const oembedController = new AbortController();
-        const oembedTimeout = setTimeout(() => oembedController.abort(), 2000);
-        const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent('https://www.youtube.com/watch?v=' + ytId)}&format=json`, {
-          signal: oembedController.signal
-        });
-        clearTimeout(oembedTimeout);
-
-        if (oembedRes.ok) {
-          const oembed = await oembedRes.json();
-          return res.json({
-            id: ytId,
-            title: oembed.title || 'Video de YouTube',
-            channel: oembed.author_name || 'YouTube Creator',
-            thumbnail: `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`,
-            duration: 0,
-            durationFormatted: 'Alta Calidad',
-            viewCount: null,
-            uploadDate: null,
-            webpageUrl: `https://www.youtube.com/watch?v=${ytId}`,
-            platform: 'youtube',
-          });
-        }
-      } catch (oembedErr) {
-        console.warn('[Info] oEmbed fast path notice:', oembedErr.message);
-      }
-    }
-
-    // Fallback: use youtube-dl-exec (yt-dlp)
+    // Default: use youtube-dl-exec (yt-dlp)
     try {
       const infoOptions = {
         dumpSingleJson: true,
@@ -341,7 +311,31 @@ app.post('/api/info', async (req, res) => {
         platform: 'youtube',
       });
     } catch (ytDlpErr) {
-      console.error('[Info] yt-dlp info error:', ytDlpErr.message);
+      console.warn('[Info] yt-dlp fallback oEmbed activado para:', targetUrl, ytDlpErr.message);
+
+      if (ytId) {
+        try {
+          const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent('https://www.youtube.com/watch?v=' + ytId)}&format=json`);
+          if (oembedRes.ok) {
+            const oembed = await oembedRes.json();
+            return res.json({
+              id: ytId,
+              title: oembed.title || 'Video de YouTube',
+              channel: oembed.author_name || 'YouTube Creator',
+              thumbnail: oembed.thumbnail_url || `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`,
+              duration: 0,
+              durationFormatted: 'Completo',
+              viewCount: null,
+              uploadDate: null,
+              webpageUrl: `https://www.youtube.com/watch?v=${ytId}`,
+              platform: 'youtube',
+            });
+          }
+        } catch (oembedErr) {
+          console.error('[Info] oEmbed error:', oembedErr.message);
+        }
+      }
+
       throw ytDlpErr;
     }
   } catch (err) {
@@ -352,56 +346,7 @@ app.post('/api/info', async (req, res) => {
   }
 });
 
-// ─── Active Jobs & SSE Real-time Progress ─────────────────────
-const activeJobs = new Map();
-
-function updateJob(jobId, state) {
-  if (!jobId) return;
-  const job = activeJobs.get(jobId);
-  if (job) {
-    job.lastState = state;
-    job.listeners.forEach((send) => {
-      try { send(state); } catch {}
-    });
-  } else {
-    activeJobs.set(jobId, { listeners: [], lastState: state });
-  }
-}
-
-// SSE Real-time Progress Endpoint
-app.get('/api/progress/:id', (req, res) => {
-  const jobId = req.params.id;
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders();
-
-  const sendProgress = (data) => {
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
-  };
-
-  let job = activeJobs.get(jobId);
-  if (!job) {
-    job = { listeners: [], lastState: { stage: 1, percent: 5, text: 'Conectando...' } };
-    activeJobs.set(jobId, job);
-  }
-  job.listeners.push(sendProgress);
-  if (job.lastState) sendProgress(job.lastState);
-
-  req.on('close', () => {
-    const current = activeJobs.get(jobId);
-    if (current) {
-      current.listeners = current.listeners.filter((fn) => fn !== sendProgress);
-      if (current.listeners.length === 0) {
-        setTimeout(() => {
-          if (activeJobs.get(jobId)?.listeners.length === 0) activeJobs.delete(jobId);
-        }, 120000);
-      }
-    }
-  });
-});
-
-// Prepare / Convert Endpoint (Returns immediate downloadUrl with real-time SSE)
+// Prepare / Convert Endpoint (Returns immediate downloadUrl)
 app.post('/api/prepare', async (req, res) => {
   const {
     url,
@@ -411,7 +356,6 @@ app.post('/api/prepare', async (req, res) => {
     quality = '320',
     trimStart,
     trimEnd,
-    jobId: clientJobId,
   } = req.body || {};
 
   if (!url || !isValidSupportedUrl(url)) {
@@ -419,19 +363,16 @@ app.post('/api/prepare', async (req, res) => {
   }
 
   const platform = detectPlatform(url);
-  const fileId = clientJobId || crypto.randomBytes(8).toString('hex');
+  const fileId = crypto.randomBytes(8).toString('hex');
   const cleanTitle = sanitizeFilename(clientTitle || (platform === 'tiktok' ? 'tiktok_media' : 'mp3dw_media'));
   const isVideo = format === 'mp4';
   const startSec = parseTimeToSeconds(trimStart);
   const endSec = parseTimeToSeconds(trimEnd);
   const hasTrim = (startSec !== null && startSec >= 0) || (endSec !== null && endSec > (startSec || 0));
 
-  updateJob(fileId, { stage: 1, percent: 10, text: 'Iniciando conexión con el servidor...' });
-
   try {
     // ─── TIKTOK DIRECT FAST PATH ───
     if (platform === 'tiktok') {
-      updateJob(fileId, { stage: 1, percent: 40, text: 'Extrayendo enlace de alta velocidad de TikTok...' });
       const tiktokData = await fetchTikTokMetadata(url);
       if (!tiktokData || (!tiktokData.playUrl && !tiktokData.musicUrl)) {
         throw new Error('No se pudo obtener el video de TikTok. Verifica que el enlace sea público.');
@@ -446,8 +387,6 @@ app.post('/api/prepare', async (req, res) => {
           ? (tiktokData.playUrl.startsWith('http') ? tiktokData.playUrl : `https://www.tikwm.com${tiktokData.playUrl}`)
           : (tiktokData.musicUrl.startsWith('http') ? tiktokData.musicUrl : `https://www.tikwm.com${tiktokData.musicUrl}`);
 
-        updateJob(fileId, { stage: 3, percent: 100, text: '¡Descarga lista!', downloadUrl: directUrl });
-
         return res.json({
           success: true,
           mode: 'direct',
@@ -457,7 +396,6 @@ app.post('/api/prepare', async (req, res) => {
       }
 
       // TikTok with conversion / trim
-      updateJob(fileId, { stage: 2, percent: 60, text: 'Procesando y convirtiendo con FFmpeg...' });
       const sourceUrl = (!isVideo && tiktokData.musicUrl)
         ? (tiktokData.musicUrl.startsWith('http') ? tiktokData.musicUrl : `https://www.tikwm.com${tiktokData.musicUrl}`)
         : (tiktokData.playUrl.startsWith('http') ? tiktokData.playUrl : `https://www.tikwm.com${tiktokData.playUrl}`);
@@ -505,34 +443,35 @@ app.post('/api/prepare', async (req, res) => {
 
       try { fs.unlinkSync(tempRaw); } catch {}
 
-      const fileDownloadUrl = `/api/file/${fileId}?name=${encodeURIComponent(downloadFilename)}`;
-      updateJob(fileId, { stage: 3, percent: 100, text: '¡Descarga lista!', downloadUrl: fileDownloadUrl });
-
       return res.json({
         success: true,
         mode: 'server',
-        downloadUrl: fileDownloadUrl,
+        downloadUrl: `/api/file/${fileId}?name=${encodeURIComponent(downloadFilename)}`,
         filename: downloadFilename,
       });
     }
 
-    // ─── YOUTUBE PIPELINE (Multi-Strategy Fallback with Real-Time Progress) ───
-    updateJob(fileId, { stage: 1, percent: 15, text: 'Conectando con YouTube...' });
-
+    // ─── YOUTUBE PIPELINE ───
     const ytId = extractYouTubeId(url);
     const targetUrl = ytId ? `https://www.youtube.com/watch?v=${ytId}` : url.trim();
     const outputTemplate = path.join(TEMP_DIR, `${fileId}.%(ext)s`);
 
-    // Build base options (shared across all strategies)
-    const baseYtOptions = {
+    const ytOptions = {
       noPlaylist: true,
       noWarnings: true,
       noCheckCertificates: true,
-      newline: true,
       ffmpegLocation: ffmpeg.path,
       output: outputTemplate,
-      jsRuntimes: `node:${process.execPath}`,
     };
+
+    if (fs.existsSync(COOKIES_PATH)) {
+      ytOptions.cookies = COOKIES_PATH;
+      ytOptions.jsRuntimes = `node:${process.execPath}`;
+    } else {
+      ytOptions.extractorArgs = isVideo
+        ? 'youtube:player_client=tv_embedded,web_embedded,android_creator'
+        : 'youtube:player_client=android_music,android_creator,tv_embedded';
+    }
 
     let postArgs = [];
     if (startSec !== null && startSec >= 0) postArgs.push(`-ss ${startSec}`);
@@ -549,137 +488,38 @@ app.post('/api/prepare', async (req, res) => {
       } else {
         formatSelector = '18/134+140/bestvideo[height<=360]+bestaudio/best[height<=360]/best';
       }
-      baseYtOptions.format = formatSelector;
-      baseYtOptions.mergeOutputFormat = 'mp4';
-      baseYtOptions.windowsFilenames = true;
-      if (postArgs.length > 0) baseYtOptions.postprocessorArgs = postArgs.join(' ');
+
+      ytOptions.format = formatSelector;
+      ytOptions.mergeOutputFormat = 'mp4';
+      ytOptions.windowsFilenames = true;
+
+      if (postArgs.length > 0) {
+        ytOptions.postprocessorArgs = postArgs.join(' ');
+      }
     } else {
-      baseYtOptions.format = 'bestaudio/best';
-      baseYtOptions.extractAudio = true;
-      baseYtOptions.windowsFilenames = true;
+      ytOptions.format = '251/140/250/249/bestaudio/best';
+      ytOptions.extractAudio = true;
+      ytOptions.concurrentFragments = 4;
+      ytOptions.windowsFilenames = true;
+
       const audioFmt = ['mp3', 'flac', 'wav'].includes(format.toLowerCase()) ? format.toLowerCase() : 'mp3';
-      baseYtOptions.audioFormat = audioFmt;
+      ytOptions.audioFormat = audioFmt;
+
       if (audioFmt === 'mp3') {
         const bitrate = ['320', '256', '192', '128'].includes(String(quality)) ? `${quality}K` : '320K';
-        baseYtOptions.audioQuality = bitrate;
+        ytOptions.audioQuality = bitrate;
       } else {
-        baseYtOptions.audioQuality = '0';
+        ytOptions.audioQuality = '0';
       }
+
       if (clientArtist) postArgs.push(`-metadata artist="${clientArtist.replace(/"/g, '')}"`);
       if (clientTitle) postArgs.push(`-metadata title="${cleanTitle.replace(/"/g, '')}"`);
       postArgs.push('-threads 0');
-      if (postArgs.length > 0) baseYtOptions.postprocessorArgs = postArgs.join(' ');
-      baseYtOptions.addMetadata = true;
+      if (postArgs.length > 0) ytOptions.postprocessorArgs = postArgs.join(' ');
+      ytOptions.addMetadata = true;
     }
 
-    // ─── Define download strategies (tried in order) ───
-    const strategies = [
-      {
-        name: 'extractorArgs',
-        label: 'Estrategia rápida sin cookies...',
-        options: { ...baseYtOptions, extractorArgs: 'youtube:player_client=mweb,android_creator,android,web_embedded' },
-      },
-    ];
-
-    // Add cookies strategy if cookies file exists
-    const cookiePaths = [
-      path.join(__dirname, 'www.youtube.com_cookies.txt'),
-      path.join(__dirname, 'cookies.txt'),
-    ];
-    const validCookiePath = cookiePaths.find((p) => fs.existsSync(p));
-    if (validCookiePath) {
-      strategies.push({
-        name: 'cookies',
-        label: 'Reintentando con cookies de sesión...',
-        options: { ...baseYtOptions, cookies: validCookiePath, extractorArgs: 'youtube:player_client=mweb,android_creator' },
-      });
-    }
-
-    // ─── Execute strategies with fallback ───
-    let lastError = null;
-    for (let i = 0; i < strategies.length; i++) {
-      const strategy = strategies[i];
-      console.log(`[YouTube] Trying strategy ${i + 1}/${strategies.length}: ${strategy.name}`);
-      updateJob(fileId, { stage: 1, percent: 15, text: strategy.label });
-
-      // Clean up any partial files from previous attempts
-      if (i > 0) {
-        try {
-          fs.readdirSync(TEMP_DIR).filter((f) => f.startsWith(fileId)).forEach((f) => {
-            try { fs.unlinkSync(path.join(TEMP_DIR, f)); } catch {}
-          });
-        } catch {}
-      }
-
-      try {
-        await new Promise((resolve, reject) => {
-          const ytProc = youtubedl.exec(targetUrl, strategy.options);
-          let ytStderr = '';
-
-          ytProc.stderr.on('data', (d) => {
-            ytStderr += d.toString();
-          });
-
-          ytProc.stdout.on('data', (chunk) => {
-            const lines = chunk.toString().split('\n');
-            for (const line of lines) {
-              const trimmed = line.trim();
-              const match = trimmed.match(/\[download\]\s+([\d.]+)%\s+of\s+([~\d.]+\w+)\s+at\s+([\d.]+\w+\/s)\s+ETA\s+([\d:]+)/i);
-              if (match) {
-                const dlPercent = parseFloat(match[1]);
-                const speed = match[3];
-                const eta = match[4];
-                const totalProgress = Math.min(Math.round(dlPercent * 0.75), 75);
-                updateJob(fileId, {
-                  stage: 1,
-                  percent: totalProgress,
-                  text: `Descargando de YouTube: ${match[1]}% (${speed}) • Restan ${eta}`,
-                });
-              } else if (trimmed.includes('[ExtractAudio]') || trimmed.includes('[ffmpeg]') || trimmed.includes('[Merger]')) {
-                updateJob(fileId, {
-                  stage: 2,
-                  percent: 85,
-                  text: isVideo ? 'Uniendo pistas de audio y video en HD...' : 'Codificando en 320 kbps con FFmpeg...',
-                });
-              }
-            }
-          });
-
-          ytProc.on('close', (code) => {
-            if (code === 0) resolve();
-            else {
-              console.error(`[yt-dlp strategy=${strategy.name} stderr]:`, ytStderr);
-              reject(new Error(ytStderr || `Error al procesar YouTube (código ${code})`));
-            }
-          });
-          ytProc.on('error', reject);
-        });
-
-        // Strategy succeeded — find output file
-        lastError = null;
-        break;
-      } catch (err) {
-        lastError = err;
-        const isBotBlock = (err.message || '').includes('Sign in to confirm');
-        const isCookieInvalid = (err.message || '').includes('cookies are no longer valid');
-        console.log(`[YouTube] Strategy ${strategy.name} failed: ${isBotBlock ? 'BOT_BLOCK' : isCookieInvalid ? 'COOKIE_EXPIRED' : 'OTHER'}`);
-
-        // If it's not a bot/cookie issue, don't try other strategies
-        if (!isBotBlock && !isCookieInvalid) break;
-      }
-    }
-
-    if (lastError) {
-      const isBotBlock = (lastError.message || '').includes('Sign in to confirm');
-      if (isBotBlock) {
-        throw new Error(
-          'YouTube bloqueó la descarga desde el servidor en la nube. ' +
-          'Esto ocurre porque YouTube detecta IPs de centros de datos. ' +
-          'Para descargar de YouTube, usa la versión local ejecutando iniciar_local.bat en tu PC.'
-        );
-      }
-      throw lastError;
-    }
+    await youtubedl(targetUrl, ytOptions);
 
     const files = fs.readdirSync(TEMP_DIR).filter((f) => f.startsWith(fileId));
     if (files.length === 0) {
@@ -689,26 +529,22 @@ app.post('/api/prepare', async (req, res) => {
     const outputFile = path.join(TEMP_DIR, files[0]);
     const fileExt = path.extname(outputFile) || (isVideo ? '.mp4' : `.${format}`);
     const downloadFilename = `${cleanTitle}${fileExt}`;
-    const fileDownloadUrl = `/api/file/${fileId}?name=${encodeURIComponent(downloadFilename)}`;
-
-    updateJob(fileId, { stage: 3, percent: 100, text: '¡Descarga lista! Guardando archivo...', downloadUrl: fileDownloadUrl });
 
     return res.json({
       success: true,
       mode: 'server',
-      downloadUrl: fileDownloadUrl,
+      downloadUrl: `/api/file/${fileId}?name=${encodeURIComponent(downloadFilename)}`,
       filename: downloadFilename,
     });
 
   } catch (err) {
     console.error('Prepare error:', err.message || err);
-    updateJob(fileId, { stage: 1, percent: 0, text: 'Error', error: err.message });
     cleanupFileId(fileId);
     return res.status(500).json({ error: err.message || 'Error al preparar la descarga.' });
   }
 });
 
-// Direct File Download Endpoint (High-Speed Native File Serving)
+// Direct File Download Endpoint
 app.get('/api/file/:id', (req, res) => {
   const fileId = req.params.id;
   const customName = req.query.name || 'descarga';
@@ -720,15 +556,33 @@ app.get('/api/file/:id', (req, res) => {
 
   const filePath = path.join(TEMP_DIR, files[0]);
   const fileExt = path.extname(filePath);
+  const stat = fs.statSync(filePath);
   const safeName = customName.endsWith(fileExt) ? customName : `${customName}${fileExt}`;
 
-  res.download(filePath, safeName, (err) => {
-    if (err) {
-      console.error('Download error:', err.message);
-    }
+  const mimeTypes = {
+    '.mp3': 'audio/mpeg',
+    '.m4a': 'audio/mp4',
+    '.wav': 'audio/wav',
+    '.flac': 'audio/flac',
+    '.opus': 'audio/opus',
+    '.aac': 'audio/aac',
+    '.mp4': 'video/mp4',
+  };
+
+  res.setHeader('Content-Type', mimeTypes[fileExt.toLowerCase()] || 'application/octet-stream');
+  res.setHeader('Content-Length', stat.size);
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="${safeName.replace(/[^\x20-\x7E]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(safeName)}`
+  );
+
+  const readStream = fs.createReadStream(filePath);
+  readStream.pipe(res);
+
+  readStream.on('end', () => {
     setTimeout(() => {
       try { fs.unlinkSync(filePath); } catch {}
-    }, 60000); // 1 min cleanup
+    }, 60000); // 1 min buffer
   });
 });
 
