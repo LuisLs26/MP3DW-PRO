@@ -266,6 +266,7 @@ app.post('/api/info', async (req, res) => {
       };
       if (fs.existsSync(COOKIES_PATH)) {
         infoOptions.cookies = COOKIES_PATH;
+        infoOptions.extractorArgs = 'youtube:player_client=mweb,web';
       } else {
         infoOptions.extractorArgs = 'youtube:player_client=tv_embedded,web_embedded,android';
       }
@@ -520,6 +521,7 @@ app.post('/api/download', async (req, res) => {
 
     if (fs.existsSync(COOKIES_PATH)) {
       ytOptions.cookies = COOKIES_PATH;
+      ytOptions.extractorArgs = 'youtube:player_client=mweb,web';
     } else {
       ytOptions.extractorArgs = 'youtube:player_client=tv_embedded,web_embedded,android';
     }
@@ -552,7 +554,7 @@ app.post('/api/download', async (req, res) => {
         ytOptions.postprocessorArgs = postArgs.join(' ');
       }
     } else {
-      ytOptions.format = 'bestaudio/251/140/250/249/18/best';
+      ytOptions.format = '18/bestaudio/251/140/250/249/best';
       ytOptions.extractAudio = true;
       ytOptions.concurrentFragments = 4;
       ytOptions.windowsFilenames = true;
