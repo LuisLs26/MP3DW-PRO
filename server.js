@@ -263,12 +263,10 @@ app.post('/api/info', async (req, res) => {
         noPlaylist: true,
         noWarnings: true,
         noCheckCertificates: true,
+        extractorArgs: 'youtube:player_client=android_music,android_creator,tv_embedded,web',
       };
       if (fs.existsSync(COOKIES_PATH)) {
         infoOptions.cookies = COOKIES_PATH;
-        infoOptions.extractorArgs = 'youtube:player_client=mweb,web';
-      } else {
-        infoOptions.extractorArgs = 'youtube:player_client=tv_embedded,web_embedded,android';
       }
       const info = await youtubedl(targetUrl, infoOptions);
 
@@ -521,9 +519,12 @@ app.post('/api/download', async (req, res) => {
 
     if (fs.existsSync(COOKIES_PATH)) {
       ytOptions.cookies = COOKIES_PATH;
-      ytOptions.extractorArgs = 'youtube:player_client=mweb,web';
+    }
+
+    if (isVideo) {
+      ytOptions.extractorArgs = 'youtube:player_client=tv_embedded,web_embedded,android_creator,android';
     } else {
-      ytOptions.extractorArgs = 'youtube:player_client=tv_embedded,web_embedded,android';
+      ytOptions.extractorArgs = 'youtube:player_client=android_music,android_creator,tv_embedded,web';
     }
 
     let postArgs = [];
@@ -554,7 +555,7 @@ app.post('/api/download', async (req, res) => {
         ytOptions.postprocessorArgs = postArgs.join(' ');
       }
     } else {
-      ytOptions.format = '18/bestaudio/251/140/250/249/best';
+      ytOptions.format = '251/140/250/249/bestaudio/best';
       ytOptions.extractAudio = true;
       ytOptions.concurrentFragments = 4;
       ytOptions.windowsFilenames = true;
