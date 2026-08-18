@@ -250,6 +250,7 @@ app.post('/api/info', async (req, res) => {
       if (tiktokData) {
         return res.json(tiktokData);
       }
+      return res.status(404).json({ error: 'No se pudo obtener la información de este video de TikTok. Verifica que el enlace sea público.' });
     }
 
     const ytId = extractYouTubeId(url);
