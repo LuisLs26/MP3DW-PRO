@@ -557,7 +557,7 @@ app.post('/api/prepare', async (req, res) => {
 
       if (postArgs.length > 0) ytOptions.postprocessorArgs = postArgs.join(' ');
     } else {
-      ytOptions.format = '140/251/250/249/bestaudio/best';
+      ytOptions.format = 'bestaudio/best';
       ytOptions.extractAudio = true;
       ytOptions.windowsFilenames = true;
 
@@ -580,6 +580,11 @@ app.post('/api/prepare', async (req, res) => {
 
     // Execute with real-time stdout tracking
     const ytProc = youtubedl.exec(targetUrl, ytOptions);
+    let ytStderr = '';
+
+    ytProc.stderr.on('data', (d) => {
+      ytStderr += d.toString();
+    });
 
     ytProc.stdout.on('data', (chunk) => {
       const lines = chunk.toString().split('\n');
@@ -610,7 +615,10 @@ app.post('/api/prepare', async (req, res) => {
     await new Promise((resolve, reject) => {
       ytProc.on('close', (code) => {
         if (code === 0) resolve();
-        else reject(new Error(`Error al procesar YouTube (código ${code})`));
+        else {
+          console.error('[yt-dlp stderr]:', ytStderr);
+          reject(new Error(ytStderr || `Error al procesar YouTube (código ${code})`));
+        }
       });
       ytProc.on('error', reject);
     });
