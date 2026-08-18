@@ -21,6 +21,16 @@ if (!fs.existsSync(TEMP_DIR)) {
 // Cookies path for authenticated downloads
 const COOKIES_PATH = path.join(__dirname, 'cookies.txt');
 
+// Ensure Node binary directory is in PATH for yt-dlp JavaScript challenge solver
+try {
+  const nodeDir = path.dirname(process.execPath);
+  if (process.env.PATH && !process.env.PATH.includes(nodeDir)) {
+    process.env.PATH = `${nodeDir}${path.delimiter}${process.env.PATH}`;
+  }
+} catch (e) {
+  console.warn('PATH setup notice:', e.message);
+}
+
 // Ensure FFmpeg binary has execution permissions on Linux/Render
 try {
   if (ffmpeg.path && fs.existsSync(ffmpeg.path)) {
@@ -212,24 +222,6 @@ app.get('/api/health', (req, res) => {
     ffmpeg: ffmpeg.path ? 'ready' : 'missing',
     cookiesPresent: fs.existsSync(COOKIES_PATH),
   });
-});
-
-app.get('/api/debug-formats', async (req, res) => {
-  const url = req.query.url || 'https://www.youtube.com/watch?v=GJtrE-SLtZA';
-  const hasCookies = fs.existsSync(COOKIES_PATH);
-  try {
-    const opts = { dumpSingleJson: true, noPlaylist: true };
-    if (hasCookies) opts.cookies = COOKIES_PATH;
-    const info = await youtubedl(url, opts);
-    res.json({
-      hasCookies,
-      title: info.title,
-      formatsCount: info.formats?.length,
-      formats: info.formats?.map(f => ({ id: f.format_id, ext: f.ext, acodec: f.acodec, vcodec: f.vcodec, note: f.format_note }))
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message, hasCookies });
-  }
 });
 
 // Helper to extract YouTube video ID
