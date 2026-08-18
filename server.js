@@ -210,7 +210,26 @@ app.get('/api/health', (req, res) => {
     service: 'MP3DW Studio Pro',
     version: '2.1.0',
     ffmpeg: ffmpeg.path ? 'ready' : 'missing',
+    cookiesPresent: fs.existsSync(COOKIES_PATH),
   });
+});
+
+app.get('/api/debug-formats', async (req, res) => {
+  const url = req.query.url || 'https://www.youtube.com/watch?v=GJtrE-SLtZA';
+  const hasCookies = fs.existsSync(COOKIES_PATH);
+  try {
+    const opts = { dumpSingleJson: true, noPlaylist: true };
+    if (hasCookies) opts.cookies = COOKIES_PATH;
+    const info = await youtubedl(url, opts);
+    res.json({
+      hasCookies,
+      title: info.title,
+      formatsCount: info.formats?.length,
+      formats: info.formats?.map(f => ({ id: f.format_id, ext: f.ext, acodec: f.acodec, vcodec: f.vcodec, note: f.format_note }))
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message, hasCookies });
+  }
 });
 
 // Helper to extract YouTube video ID
