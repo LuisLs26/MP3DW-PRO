@@ -532,7 +532,7 @@ app.post('/api/prepare', async (req, res) => {
       output: outputTemplate,
     };
 
-    ytOptions.extractorArgs = 'youtube:player_client=ios,android,web_embedded';
+    ytOptions.extractorArgs = 'youtube:player_client=mweb,android_creator,android,web_embedded';
     ytOptions.jsRuntimes = `node:${process.execPath}`;
 
     let postArgs = [];
