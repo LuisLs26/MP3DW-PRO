@@ -5,7 +5,7 @@ const fs = require('fs');
 const net = require('net');
 const crypto = require('crypto');
 const { exec, spawn } = require('child_process');
-const stream = require('stream');
+const { Readable } = require('stream');
 const youtubedl = require('youtube-dl-exec');
 const ffmpeg = require('@ffmpeg-installer/ffmpeg');
 
@@ -432,7 +432,7 @@ app.post('/api/download', async (req, res) => {
               `attachment; filename="${downloadFilename.replace(/[^\x20-\x7E]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(downloadFilename)}`
             );
 
-            const nodeStream = stream.Readable.fromWeb(directRes.body);
+            const nodeStream = Readable.fromWeb(directRes.body);
             nodeStream.pipe(res);
             return;
           }
@@ -611,11 +611,11 @@ app.post('/api/download', async (req, res) => {
       `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodeURIComponent(downloadFilename).replace(/'/g, '%27')}`
     );
 
-    const stream = fs.createReadStream(outputFile);
-    stream.pipe(res);
+    const readStream = fs.createReadStream(outputFile);
+    readStream.pipe(res);
 
-    stream.on('end', () => cleanupFileId(fileId));
-    stream.on('error', (err) => {
+    readStream.on('end', () => cleanupFileId(fileId));
+    readStream.on('error', (err) => {
       console.error('Stream error:', err);
       if (!res.headersSent) {
         res.status(500).json({ error: 'Error al enviar el archivo generado' });
