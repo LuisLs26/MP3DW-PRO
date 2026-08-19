@@ -267,7 +267,7 @@
     progressPercent.textContent = '0%';
   }
 
-  // ─── Download Process (Prepare + Instant Native Download) ───
+  // ─── Download Process (Real-Time SSE Progress + Instant Download) ───
   async function startDownload() {
     if (!state.currentUrl || state.isDownloading) return;
 
@@ -277,7 +277,9 @@
     showSection(progressSection);
 
     progressTitle.textContent = state.mode === 'video' ? 'Procesando Video MP4...' : 'Convirtiendo Audio en Alta Calidad...';
-    updateProgressStage(1, 15, 'Conectando con el motor de descarga...');
+    updateProgressStage(1, 5, 'Conectando con el motor de descarga...');
+
+    const jobId = 'job_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
 
     const payload = {
       url: state.currentUrl,
@@ -287,25 +289,28 @@
       quality: state.mode === 'video' ? state.videoQuality : state.bitrate,
       trimStart: trimStartInput.value.trim() || '',
       trimEnd: trimEndInput.value.trim() || '',
+      jobId,
     };
 
     const fileExt = payload.format;
     const safeTitle = (payload.title || 'audio').replace(/[/\\?%*:|"<>]/g, '_').replace(/\s+/g, ' ').trim() || 'descarga';
     const cleanSafeName = `${safeTitle}.${fileExt}`;
 
-    let currentPercent = 15;
-    const progressTimer = setInterval(() => {
-      if (currentPercent < 90) {
-        currentPercent += Math.random() * 4 + 1.5;
-        if (currentPercent < 50) {
-          updateProgressStage(1, currentPercent, 'Descargando flujo multimedia...');
-        } else if (currentPercent < 80) {
-          updateProgressStage(2, currentPercent, state.mode === 'video' ? 'Codificando video MP4...' : `Procesando FFmpeg 320k (${fileExt.toUpperCase()})...`);
-        } else {
-          updateProgressStage(2, currentPercent, 'Incrustando etiquetas y empaquetando archivo...');
-        }
-      }
-    }, 300);
+    // Setup Real-Time Server-Sent Events (SSE) Progress Listener
+    let eventSource = null;
+    try {
+      eventSource = new EventSource(`/api/progress/${jobId}`);
+      eventSource.onmessage = (e) => {
+        try {
+          const progressData = JSON.parse(e.data);
+          if (progressData.stage && progressData.percent !== undefined) {
+            updateProgressStage(progressData.stage, progressData.percent, progressData.text);
+          }
+        } catch {}
+      };
+    } catch (e) {
+      console.warn('SSE setup warning:', e);
+    }
 
     try {
       const res = await fetch('/api/prepare', {
@@ -315,12 +320,15 @@
       });
 
       const data = await res.json();
+      if (eventSource) {
+        eventSource.close();
+      }
+
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Error al procesar la descarga.');
       }
 
-      clearInterval(progressTimer);
-      updateProgressStage(3, 100, '¡Archivo listo! Iniciando descarga en tu navegador...');
+      updateProgressStage(3, 100, '¡Archivo listo! Guardando en tu navegador...');
 
       // Trigger instant native browser download
       const downloadLink = document.createElement('a');
@@ -364,7 +372,7 @@
       }, 600);
 
     } catch (err) {
-      clearInterval(progressTimer);
+      if (eventSource) eventSource.close();
       showError(err.message || 'Ocurrió un error durante la conversión.');
     } finally {
       state.isDownloading = false;

@@ -345,7 +345,62 @@ app.post('/api/info', async (req, res) => {
   }
 });
 
-// Prepare / Convert Endpoint (Returns immediate downloadUrl)
+// ─── Real-Time Job Progress Tracking (SSE) ──────────────────
+const jobs = new Map();
+const jobEmitters = new Map();
+
+function updateJob(jobId, data) {
+  if (!jobId) return;
+  const current = jobs.get(jobId) || {};
+  const updated = { ...current, ...data, timestamp: Date.now() };
+  jobs.set(jobId, updated);
+
+  const emitter = jobEmitters.get(jobId);
+  if (emitter) {
+    try {
+      emitter(updated);
+    } catch {}
+  }
+}
+
+// SSE Progress Endpoint
+app.get('/api/progress/:id', (req, res) => {
+  const jobId = req.params.id;
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const sendEvent = (data) => {
+    try {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    } catch {}
+  };
+
+  if (jobs.has(jobId)) {
+    sendEvent(jobs.get(jobId));
+  }
+
+  const listener = (data) => {
+    sendEvent(data);
+    if (data.stage === 3 || data.error) {
+      setTimeout(() => {
+        jobs.delete(jobId);
+        jobEmitters.delete(jobId);
+        try { res.end(); } catch {}
+      }, 1500);
+    }
+  };
+
+  jobEmitters.set(jobId, listener);
+
+  req.on('close', () => {
+    jobEmitters.delete(jobId);
+  });
+});
+
+// Prepare / Convert Endpoint (Returns immediate downloadUrl with SSE progress)
 app.post('/api/prepare', async (req, res) => {
   const {
     url,
@@ -355,6 +410,7 @@ app.post('/api/prepare', async (req, res) => {
     quality = '320',
     trimStart,
     trimEnd,
+    jobId,
   } = req.body || {};
 
   if (!url || !isValidSupportedUrl(url)) {
@@ -369,9 +425,12 @@ app.post('/api/prepare', async (req, res) => {
   const endSec = parseTimeToSeconds(trimEnd);
   const hasTrim = (startSec !== null && startSec >= 0) || (endSec !== null && endSec > (startSec || 0));
 
+  updateJob(jobId, { stage: 1, percent: 5, text: 'Iniciando conexión...' });
+
   try {
     // ─── TIKTOK DIRECT FAST PATH ───
     if (platform === 'tiktok') {
+      updateJob(jobId, { stage: 1, percent: 30, text: 'Obteniendo video de alta velocidad de TikTok...' });
       const tiktokData = await fetchTikTokMetadata(url);
       if (!tiktokData || (!tiktokData.playUrl && !tiktokData.musicUrl)) {
         throw new Error('No se pudo obtener el video de TikTok. Verifica que el enlace sea público.');
@@ -386,6 +445,8 @@ app.post('/api/prepare', async (req, res) => {
           ? (tiktokData.playUrl.startsWith('http') ? tiktokData.playUrl : `https://www.tikwm.com${tiktokData.playUrl}`)
           : (tiktokData.musicUrl.startsWith('http') ? tiktokData.musicUrl : `https://www.tikwm.com${tiktokData.musicUrl}`);
 
+        updateJob(jobId, { stage: 3, percent: 100, text: '¡Descarga lista! Guardando archivo...' });
+
         return res.json({
           success: true,
           mode: 'direct',
@@ -395,6 +456,7 @@ app.post('/api/prepare', async (req, res) => {
       }
 
       // TikTok with conversion / trim
+      updateJob(jobId, { stage: 1, percent: 50, text: 'Descargando flujo para edición...' });
       const sourceUrl = (!isVideo && tiktokData.musicUrl)
         ? (tiktokData.musicUrl.startsWith('http') ? tiktokData.musicUrl : `https://www.tikwm.com${tiktokData.musicUrl}`)
         : (tiktokData.playUrl.startsWith('http') ? tiktokData.playUrl : `https://www.tikwm.com${tiktokData.playUrl}`);
@@ -413,6 +475,8 @@ app.post('/api/prepare', async (req, res) => {
 
       const buffer = Buffer.from(await rawRes.arrayBuffer());
       fs.writeFileSync(tempRaw, buffer);
+
+      updateJob(jobId, { stage: 2, percent: 80, text: 'Codificando y recortando archivo...' });
 
       let ffmpegArgs = ['-y', '-i', tempRaw];
       if (startSec !== null && startSec >= 0) ffmpegArgs.push('-ss', `${startSec}`);
@@ -442,6 +506,8 @@ app.post('/api/prepare', async (req, res) => {
 
       try { fs.unlinkSync(tempRaw); } catch {}
 
+      updateJob(jobId, { stage: 3, percent: 100, text: '¡Descarga lista! Guardando archivo...' });
+
       return res.json({
         success: true,
         mode: 'server',
@@ -450,10 +516,12 @@ app.post('/api/prepare', async (req, res) => {
       });
     }
 
-    // ─── YOUTUBE PIPELINE ───
+    // ─── YOUTUBE PIPELINE WITH REAL-TIME PROGRESS ───
     const ytId = extractYouTubeId(url);
     const targetUrl = ytId ? `https://www.youtube.com/watch?v=${ytId}` : url.trim();
     const outputTemplate = path.join(TEMP_DIR, `${fileId}.%(ext)s`);
+
+    updateJob(jobId, { stage: 1, percent: 10, text: 'Conectando con YouTube...' });
 
     const ytOptions = {
       noPlaylist: true,
@@ -514,7 +582,46 @@ app.post('/api/prepare', async (req, res) => {
       ytOptions.addMetadata = true;
     }
 
-    await youtubedl(targetUrl, ytOptions);
+    await new Promise((resolve, reject) => {
+      const ytProc = youtubedl.exec(targetUrl, ytOptions);
+      let stderrData = '';
+
+      ytProc.stderr.on('data', (d) => {
+        stderrData += d.toString();
+      });
+
+      ytProc.stdout.on('data', (chunk) => {
+        const lines = chunk.toString().split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          const match = trimmed.match(/\[download\]\s+([\d.]+)%\s+of\s+([~\d.]+\w+)\s+at\s+([\d.]+\w+\/s)\s+ETA\s+([\d:]+)/i);
+          if (match) {
+            const dlPercent = parseFloat(match[1]);
+            const speed = match[3];
+            const eta = match[4];
+            const overall = Math.min(Math.round(10 + (dlPercent * 0.65)), 75);
+            updateJob(jobId, {
+              stage: 1,
+              percent: overall,
+              text: `Descargando de YouTube: ${match[1]}% (${speed}) • Restan ${eta}`,
+            });
+          } else if (trimmed.includes('[ExtractAudio]') || trimmed.includes('[ffmpeg]') || trimmed.includes('[Merger]')) {
+            updateJob(jobId, {
+              stage: 2,
+              percent: 85,
+              text: isVideo ? 'Uniendo pistas de audio y video en Full HD...' : 'Codificando en 320 kbps con FFmpeg...',
+            });
+          }
+        }
+      });
+
+      ytProc.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(stderrData || `Error al procesar descarga (código ${code})`));
+      });
+
+      ytProc.on('error', reject);
+    });
 
     const files = fs.readdirSync(TEMP_DIR).filter((f) => f.startsWith(fileId));
     if (files.length === 0) {
@@ -525,6 +632,8 @@ app.post('/api/prepare', async (req, res) => {
     const fileExt = path.extname(outputFile) || (isVideo ? '.mp4' : `.${format}`);
     const downloadFilename = `${cleanTitle}${fileExt}`;
 
+    updateJob(jobId, { stage: 3, percent: 100, text: '¡Descarga lista! Guardando archivo...' });
+
     return res.json({
       success: true,
       mode: 'server',
@@ -534,6 +643,7 @@ app.post('/api/prepare', async (req, res) => {
 
   } catch (err) {
     console.error('Prepare error:', err.message || err);
+    updateJob(jobId, { stage: 1, percent: 0, text: 'Error', error: err.message });
     cleanupFileId(fileId);
     return res.status(500).json({ error: err.message || 'Error al preparar la descarga.' });
   }
