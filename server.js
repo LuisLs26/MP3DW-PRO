@@ -544,26 +544,31 @@ app.post('/api/prepare', async (req, res) => {
     if (isVideo) {
       let formatSelector;
       if (quality === '1080') {
-        formatSelector = '137+140/136+140/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
+        formatSelector = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
       } else if (quality === '720') {
-        formatSelector = '136+140/bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best';
+        formatSelector = 'bestvideo[height<=720]+bestaudio/best[height<=720]/best';
       } else if (quality === '480') {
-        formatSelector = '135+140/bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best[height<=480]/best';
+        formatSelector = 'bestvideo[height<=480]+bestaudio/best[height<=480]/best';
       } else {
-        formatSelector = '18/134+140/bestvideo[height<=360]+bestaudio/best[height<=360]/best';
+        formatSelector = 'bestvideo[height<=360]+bestaudio/best[height<=360]/best';
       }
 
       ytOptions.format = formatSelector;
       ytOptions.mergeOutputFormat = 'mp4';
       ytOptions.windowsFilenames = true;
+      ytOptions.embedThumbnail = true;
+      ytOptions.addMetadata = true;
 
+      postArgs.push('-threads 0');
       if (postArgs.length > 0) {
         ytOptions.postprocessorArgs = postArgs.join(' ');
       }
     } else {
-      ytOptions.format = '140/251/250/249/bestaudio/best';
+      ytOptions.format = 'bestaudio/best';
       ytOptions.extractAudio = true;
       ytOptions.windowsFilenames = true;
+      ytOptions.embedThumbnail = true;
+      ytOptions.addMetadata = true;
 
       const audioFmt = ['mp3', 'flac', 'wav'].includes(format.toLowerCase()) ? format.toLowerCase() : 'mp3';
       ytOptions.audioFormat = audioFmt;
@@ -571,15 +576,19 @@ app.post('/api/prepare', async (req, res) => {
       if (audioFmt === 'mp3') {
         const bitrate = ['320', '256', '192', '128'].includes(String(quality)) ? `${quality}K` : '320K';
         ytOptions.audioQuality = bitrate;
-      } else {
+        postArgs.push('-b:a ' + (['320', '256', '192', '128'].includes(String(quality)) ? `${quality}k` : '320k') + ' -q:a 0');
+      } else if (audioFmt === 'flac') {
         ytOptions.audioQuality = '0';
+        postArgs.push('-compression_level 12');
+      } else if (audioFmt === 'wav') {
+        ytOptions.audioQuality = '0';
+        postArgs.push('-c:a pcm_s24le');
       }
 
       if (clientArtist) postArgs.push(`-metadata artist="${clientArtist.replace(/"/g, '')}"`);
       if (clientTitle) postArgs.push(`-metadata title="${cleanTitle.replace(/"/g, '')}"`);
       postArgs.push('-threads 0');
       if (postArgs.length > 0) ytOptions.postprocessorArgs = postArgs.join(' ');
-      ytOptions.addMetadata = true;
     }
 
     await new Promise((resolve, reject) => {
@@ -886,26 +895,31 @@ app.all('/api/download', async (req, res) => {
     if (isVideo) {
       let formatSelector;
       if (quality === '1080') {
-        formatSelector = '137+140/136+140/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
+        formatSelector = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
       } else if (quality === '720') {
-        formatSelector = '136+140/bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best';
+        formatSelector = 'bestvideo[height<=720]+bestaudio/best[height<=720]/best';
       } else if (quality === '480') {
-        formatSelector = '135+140/bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best[height<=480]/best';
+        formatSelector = 'bestvideo[height<=480]+bestaudio/best[height<=480]/best';
       } else {
-        formatSelector = '18/134+140/bestvideo[height<=360]+bestaudio/best[height<=360]/best';
+        formatSelector = 'bestvideo[height<=360]+bestaudio/best[height<=360]/best';
       }
 
       ytOptions.format = formatSelector;
       ytOptions.mergeOutputFormat = 'mp4';
       ytOptions.windowsFilenames = true;
+      ytOptions.embedThumbnail = true;
+      ytOptions.addMetadata = true;
 
+      postArgs.push('-threads 0');
       if (postArgs.length > 0) {
         ytOptions.postprocessorArgs = postArgs.join(' ');
       }
     } else {
-      ytOptions.format = '140/251/250/249/bestaudio/best';
+      ytOptions.format = 'bestaudio/best';
       ytOptions.extractAudio = true;
       ytOptions.windowsFilenames = true;
+      ytOptions.embedThumbnail = true;
+      ytOptions.addMetadata = true;
 
       const audioFmt = ['mp3', 'flac', 'wav'].includes(format.toLowerCase())
         ? format.toLowerCase()
@@ -916,8 +930,13 @@ app.all('/api/download', async (req, res) => {
       if (audioFmt === 'mp3') {
         const bitrate = ['320', '256', '192', '128'].includes(String(quality)) ? `${quality}K` : '320K';
         ytOptions.audioQuality = bitrate;
-      } else {
+        postArgs.push('-b:a ' + (['320', '256', '192', '128'].includes(String(quality)) ? `${quality}k` : '320k') + ' -q:a 0');
+      } else if (audioFmt === 'flac') {
         ytOptions.audioQuality = '0';
+        postArgs.push('-compression_level 12');
+      } else if (audioFmt === 'wav') {
+        ytOptions.audioQuality = '0';
+        postArgs.push('-c:a pcm_s24le');
       }
 
       if (clientArtist) {
@@ -926,12 +945,10 @@ app.all('/api/download', async (req, res) => {
       if (clientTitle) {
         postArgs.push(`-metadata title="${cleanTitle.replace(/"/g, '')}"`);
       }
-
+      postArgs.push('-threads 0');
       if (postArgs.length > 0) {
         ytOptions.postprocessorArgs = postArgs.join(' ');
       }
-
-      ytOptions.addMetadata = true;
     }
 
     await youtubedl(targetUrl, ytOptions);
