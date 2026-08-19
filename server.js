@@ -911,7 +911,7 @@ async function start() {
   ╚═══════════════════════════════════════════════════════════╝
     `);
 
-    if (process.env.NO_AUTO_OPEN !== 'true' && !process.env.RENDER && !process.env.PORT) {
+    if (process.env.NO_AUTO_OPEN !== 'true' && !process.env.RENDER) {
       setTimeout(() => {
         openBrowser(serverUrl);
       }, 500);
