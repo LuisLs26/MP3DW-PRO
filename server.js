@@ -267,12 +267,11 @@ app.post('/api/info', async (req, res) => {
         noPlaylist: true,
         noWarnings: true,
         noCheckCertificates: true,
+        extractorArgs: 'youtube:player_client=mweb,android_creator,android',
       };
       if (fs.existsSync(COOKIES_PATH)) {
         infoOptions.cookies = COOKIES_PATH;
         infoOptions.jsRuntimes = `node:${process.execPath}`;
-      } else {
-        infoOptions.extractorArgs = 'youtube:player_client=android_music,android_creator,tv_embedded';
       }
       const info = await youtubedl(targetUrl, infoOptions);
 
@@ -462,15 +461,12 @@ app.post('/api/prepare', async (req, res) => {
       noCheckCertificates: true,
       ffmpegLocation: ffmpeg.path,
       output: outputTemplate,
+      extractorArgs: 'youtube:player_client=mweb,android_creator,android',
     };
 
     if (fs.existsSync(COOKIES_PATH)) {
       ytOptions.cookies = COOKIES_PATH;
       ytOptions.jsRuntimes = `node:${process.execPath}`;
-    } else {
-      ytOptions.extractorArgs = isVideo
-        ? 'youtube:player_client=tv_embedded,web_embedded,android_creator'
-        : 'youtube:player_client=android_music,android_creator,tv_embedded';
     }
 
     let postArgs = [];
@@ -480,7 +476,7 @@ app.post('/api/prepare', async (req, res) => {
     if (isVideo) {
       let formatSelector;
       if (quality === '1080') {
-        formatSelector = '137+140/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
+        formatSelector = '137+140/136+140/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
       } else if (quality === '720') {
         formatSelector = '136+140/bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best';
       } else if (quality === '480') {
@@ -497,9 +493,8 @@ app.post('/api/prepare', async (req, res) => {
         ytOptions.postprocessorArgs = postArgs.join(' ');
       }
     } else {
-      ytOptions.format = '251/140/250/249/bestaudio/best';
+      ytOptions.format = '140/251/250/249/bestaudio/best';
       ytOptions.extractAudio = true;
-      ytOptions.concurrentFragments = 4;
       ytOptions.windowsFilenames = true;
 
       const audioFmt = ['mp3', 'flac', 'wav'].includes(format.toLowerCase()) ? format.toLowerCase() : 'mp3';
@@ -762,15 +757,12 @@ app.all('/api/download', async (req, res) => {
       noCheckCertificates: true,
       ffmpegLocation: ffmpeg.path,
       output: outputTemplate,
+      extractorArgs: 'youtube:player_client=mweb,android_creator,android',
     };
 
     if (fs.existsSync(COOKIES_PATH)) {
       ytOptions.cookies = COOKIES_PATH;
       ytOptions.jsRuntimes = `node:${process.execPath}`;
-    } else {
-      ytOptions.extractorArgs = isVideo
-        ? 'youtube:player_client=tv_embedded,web_embedded,android_creator'
-        : 'youtube:player_client=android_music,android_creator,tv_embedded';
     }
 
     let postArgs = [];
@@ -784,7 +776,7 @@ app.all('/api/download', async (req, res) => {
     if (isVideo) {
       let formatSelector;
       if (quality === '1080') {
-        formatSelector = '137+140/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
+        formatSelector = '137+140/136+140/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
       } else if (quality === '720') {
         formatSelector = '136+140/bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best';
       } else if (quality === '480') {
@@ -801,9 +793,8 @@ app.all('/api/download', async (req, res) => {
         ytOptions.postprocessorArgs = postArgs.join(' ');
       }
     } else {
-      ytOptions.format = '251/140/250/249/bestaudio/best';
+      ytOptions.format = '140/251/250/249/bestaudio/best';
       ytOptions.extractAudio = true;
-      ytOptions.concurrentFragments = 4;
       ytOptions.windowsFilenames = true;
 
       const audioFmt = ['mp3', 'flac', 'wav'].includes(format.toLowerCase())
